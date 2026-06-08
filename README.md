@@ -5,7 +5,7 @@ A local web app for roofing estimators to (1) upload project documents and
 Estimation Question Map**. The captured context is exportable as JSON, ready
 to feed a downstream estimation pipeline.
 
-Same tech stack as `z_profiler`: **FastAPI + HTMX + Tailwind (CDN)**, Jinja2
+Tech Stack: **FastAPI + HTMX + Tailwind (CDN)**, Jinja2
 templates with feature-based routers, in-memory sessions, atomic JSON
 persistence, and a single-image Docker container on uvicorn `:8000`.
 
