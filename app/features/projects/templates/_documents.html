@@ -1,0 +1,33 @@
+{# HTMX fragment: list of uploaded documents + flash messages. #}
+{% if flash_ok %}
+<div class="mb-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{{ flash_ok }}</div>
+{% endif %}
+{% if flash_error %}
+<div class="mb-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{{ flash_error }}</div>
+{% endif %}
+{% if skipped %}
+<div class="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+  Skipped: {{ skipped|join('; ') }}
+</div>
+{% endif %}
+
+{% if project.documents %}
+<ul class="divide-y divide-slate-100 border border-slate-200 rounded-lg">
+  {% for d in project.documents %}
+  <li class="flex items-center justify-between gap-3 px-4 py-2.5">
+    <a href="/projects/{{ project.id }}/documents/{{ d.filename|urlencode }}"
+       class="text-sm text-slate-deep hover:underline truncate">{{ d.filename }}</a>
+    <div class="flex items-center gap-4 shrink-0">
+      <span class="text-xs text-slate-400 num">{{ d.size|human_size }}</span>
+      <form hx-post="/projects/{{ project.id }}/documents/delete"
+            hx-target="#documents-panel" hx-swap="innerHTML">
+        <input type="hidden" name="filename" value="{{ d.filename }}" />
+        <button class="text-xs text-red-500 hover:text-red-700">Remove</button>
+      </form>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="text-sm text-slate-400">No documents uploaded yet.</p>
+{% endif %}

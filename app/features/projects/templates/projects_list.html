@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Projects · Roofing Estimator{% endblock %}
+{% block nav %}{% include "_nav.html" %}{% endblock %}
+{% block content %}
+
+<div class="flex items-start justify-between gap-6 mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold text-slate-deep">Projects</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Upload roofing project documents and supplement them with estimator context
+      across {{ total_questions }} roofing questions.
+    </p>
+  </div>
+</div>
+
+{% if error %}
+<div class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+  {{ error }}
+</div>
+{% endif %}
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  <!-- New project -->
+  <div class="lg:col-span-1">
+    <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+      <h2 class="text-sm font-semibold text-slate-deep mb-3">New project</h2>
+      <form method="post" action="/projects" class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Project name *</label>
+          <input name="name" required placeholder="e.g. 14 Mill Street – flat roof refurb"
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Client</label>
+          <input name="client" placeholder="Client / main contractor"
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Reference</label>
+          <input name="reference" placeholder="Internal job ref (optional)"
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+        </div>
+        <button type="submit"
+                class="w-full bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors">
+          Create project
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Existing projects -->
+  <div class="lg:col-span-2">
+    {% if projects %}
+    <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-soft text-slate-deep text-left">
+          <tr>
+            <th class="px-4 py-3 font-semibold">Project</th>
+            <th class="px-4 py-3 font-semibold text-center">Docs</th>
+            <th class="px-4 py-3 font-semibold text-center">Context</th>
+            <th class="px-4 py-3 font-semibold">Updated</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for p in projects %}
+          <tr class="hover:bg-slate-50">
+            <td class="px-4 py-3">
+              <a href="/projects/{{ p.id }}" class="font-medium text-slate-deep hover:underline">
+                {{ p.name }}
+              </a>
+              <div class="text-xs text-slate-400">
+                {% if p.client %}{{ p.client }}{% endif %}
+                {% if p.reference %} · {{ p.reference }}{% endif %}
+              </div>
+            </td>
+            <td class="px-4 py-3 text-center num text-slate-600">{{ p.n_documents }}</td>
+            <td class="px-4 py-3 text-center num text-slate-600">
+              {{ p.n_answers }}/{{ total_questions }}
+            </td>
+            <td class="px-4 py-3 text-xs text-slate-400">{{ p.updated_at|ts }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="bg-white border border-dashed border-slate-300 rounded-xl p-10 text-center">
+      <p class="text-sm text-slate-500">No projects yet. Create one to start uploading documents and adding context.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

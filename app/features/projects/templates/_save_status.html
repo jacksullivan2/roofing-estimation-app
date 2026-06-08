@@ -1,0 +1,9 @@
+{# HTMX fragment: context progress + last-save confirmation. #}
+<div class="flex items-center gap-2">
+  {% if saved %}
+  <span class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1">Saved</span>
+  {% endif %}
+  <span class="text-xs text-slate-500">
+    <span class="num font-semibold text-slate-deep">{{ answered }}</span>/<span class="num">{{ total_questions }}</span> answered
+  </span>
+</div>

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Roofing Estimator{% endblock %}</title>
+
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // Roofing brand palette. Tweak hex here and the whole app re-themes.
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'slate-deep': '#1F3864',   // headings, primary buttons
+            'slate-mid':  '#2E5496',   // hover, secondary
+            'slate-soft': '#EEF3FB',   // background tints / info boxes
+            'amber-accent': '#E0A300', // accents / warnings
+            'paper':      '#F6F7F9',   // page background
+            'ink':        '#13203A',   // body text
+          },
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system',
+                   'Segoe UI', 'Roboto', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+
+  <style>
+    body { font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .num { font-variant-numeric: tabular-nums; }
+    details > summary { list-style: none; cursor: pointer; }
+    details > summary::-webkit-details-marker { display: none; }
+    details > summary .chev { transition: transform .15s ease; }
+    details[open] > summary .chev { transform: rotate(90deg); }
+  </style>
+</head>
+<body class="bg-paper text-ink min-h-screen flex flex-col">
+
+  <header class="bg-white border-b border-slate-200">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="/projects" class="flex items-center gap-3" aria-label="Roofing Estimator home">
+        <img src="/static/favicon.svg" alt="" class="h-7 w-7" />
+        <span class="font-semibold text-slate-deep tracking-tight">Roofing Estimator</span>
+        <span class="hidden sm:inline-block h-6 w-px bg-slate-200"></span>
+        <span class="hidden sm:inline text-xs font-medium text-slate-400 tracking-wide uppercase">
+          Project intake &amp; context
+        </span>
+      </a>
+      <nav class="text-sm text-slate-600 flex items-center gap-5">
+        {% block nav %}{% endblock %}
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto w-full px-6 py-8 flex-1">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="max-w-7xl mx-auto px-6 py-6 text-xs text-slate-400 flex items-center justify-between w-full">
+    <span>Roofing Estimator · question-map driven intake</span>
+    <span class="hidden sm:inline">v{{ app_version|default('1.0.0') }}</span>
+  </footer>
+</body>
+</html>

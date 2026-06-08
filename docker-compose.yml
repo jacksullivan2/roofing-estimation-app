@@ -1,0 +1,17 @@
+services:
+  roofing-estimator:
+    build: .
+    image: roofing-estimator:dev
+    container_name: roofing-estimator
+    ports:
+      - "8000:8000"
+    environment:
+      # Uncomment to require a login. Leave unset for open local use.
+      # ADMIN_PASSWORD: "change-me"
+      DATA_DIR: /home/data
+    volumes:
+      - roofing_data:/home/data
+    restart: unless-stopped
+
+volumes:
+  roofing_data:
