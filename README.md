@@ -30,8 +30,17 @@ is rendered as a two-level accordion:
   manufacturer document.
 
 Answers save over HTMX (no page reload) and progress is tracked
-(`answered / total`). Export the gathered context with **Export context
-(JSON)**.
+(`answered / total`).
+
+The context section is bookended by three dedicated areas:
+
+- **Qualifications** (top) — capture job qualifications, assumptions or
+  exclusions as free text and/or by uploading a document.
+- **Job terms & conditions** and **Client terms & conditions** (bottom) —
+  upload the relevant T&C documents for each.
+
+Export everything — answers, qualifications, and both T&C sets — with
+**Export context (JSON)**.
 
 ---
 

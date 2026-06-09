@@ -1,4 +1,5 @@
-{# HTMX fragment: list of uploaded documents + flash messages. #}
+{# HTMX fragment: documents for one section + flash messages.
+   Expects: project, section, docs (pre-filtered list). #}
 {% if flash_ok %}
 <div class="mb-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{{ flash_ok }}</div>
 {% endif %}
@@ -11,17 +12,18 @@
 </div>
 {% endif %}
 
-{% if project.documents %}
+{% if docs %}
 <ul class="divide-y divide-slate-100 border border-slate-200 rounded-lg">
-  {% for d in project.documents %}
+  {% for d in docs %}
   <li class="flex items-center justify-between gap-3 px-4 py-2.5">
     <a href="/projects/{{ project.id }}/documents/{{ d.filename|urlencode }}"
        class="text-sm text-slate-deep hover:underline truncate">{{ d.filename }}</a>
     <div class="flex items-center gap-4 shrink-0">
       <span class="text-xs text-slate-400 num">{{ d.size|human_size }}</span>
       <form hx-post="/projects/{{ project.id }}/documents/delete"
-            hx-target="#documents-panel" hx-swap="innerHTML">
+            hx-target="#documents-panel-{{ section }}" hx-swap="innerHTML">
         <input type="hidden" name="filename" value="{{ d.filename }}" />
+        <input type="hidden" name="section" value="{{ section }}" />
         <button class="text-xs text-red-500 hover:text-red-700">Remove</button>
       </form>
     </div>

@@ -38,29 +38,7 @@
   </p>
 
   <div class="ml-8">
-    <form hx-post="/projects/{{ project.id }}/documents"
-          hx-target="#documents-panel" hx-swap="innerHTML"
-          hx-encoding="multipart/form-data"
-          hx-on::after-request="if(event.detail.successful) this.reset()"
-          class="flex flex-wrap items-center gap-3 mb-5">
-      <label class="flex-1 min-w-[260px]">
-        <input type="file" name="files" multiple
-               class="block w-full text-sm text-slate-600
-                      file:mr-3 file:rounded-lg file:border-0 file:bg-slate-soft
-                      file:px-4 file:py-2 file:text-slate-deep file:font-medium
-                      hover:file:bg-slate-200 cursor-pointer
-                      border border-slate-300 rounded-lg" />
-      </label>
-      <button type="submit"
-              class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors">
-        Upload
-      </button>
-      <span class="htmx-indicator text-xs text-slate-400">Uploading…</span>
-    </form>
-
-    <div id="documents-panel">
-      {% include "_documents.html" %}
-    </div>
+    {% with section = 'project' %}{% include "_doc_uploader.html" %}{% endwith %}
   </div>
 </section>
 
@@ -80,6 +58,32 @@
     <div id="save-status" class="text-sm text-slate-500">
       {% include "_save_status.html" %}
     </div>
+  </div>
+
+  <!-- Qualifications (top of context) -->
+  <div class="mt-5 ml-8 border border-amber-200 bg-amber-50/40 rounded-lg p-4">
+    <h3 class="text-sm font-semibold text-slate-deep">Qualifications</h3>
+    <p class="text-xs text-slate-500 mb-3">
+      Any qualifications, assumptions or exclusions that qualify this job. Add as text and/or upload a document.
+    </p>
+
+    <form hx-post="/projects/{{ project.id }}/section-text"
+          hx-target="#qual-text-status" hx-swap="innerHTML"
+          class="mb-4">
+      <input type="hidden" name="section" value="qualifications" />
+      <textarea name="text" rows="3"
+                placeholder="e.g. Price excludes asbestos removal; assumes scaffold provided by main contractor…"
+                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none">{{ project.section_text.get('qualifications', '') }}</textarea>
+      <div class="flex items-center gap-3 mt-2">
+        <button type="submit"
+                class="bg-slate-deep hover:bg-slate-mid text-white text-xs font-medium rounded-lg px-4 py-2 transition-colors">
+          Save qualifications text
+        </button>
+        <span id="qual-text-status" class="text-xs text-slate-400"></span>
+      </div>
+    </form>
+
+    {% with section = 'qualifications' %}{% include "_doc_uploader.html" %}{% endwith %}
   </div>
 
   <form hx-post="/projects/{{ project.id }}/context"
@@ -175,6 +179,20 @@
       <span class="htmx-indicator text-xs text-slate-400">Saving…</span>
     </div>
   </form>
+
+  <!-- Terms & conditions (bottom of context) -->
+  <div class="mt-8 ml-8 grid grid-cols-1 md:grid-cols-2 gap-5">
+    <div class="border border-slate-200 rounded-lg p-4">
+      <h3 class="text-sm font-semibold text-slate-deep">Job terms &amp; conditions</h3>
+      <p class="text-xs text-slate-500 mb-3">Upload the terms and conditions that apply to this job.</p>
+      {% with section = 'job_terms' %}{% include "_doc_uploader.html" %}{% endwith %}
+    </div>
+    <div class="border border-slate-200 rounded-lg p-4">
+      <h3 class="text-sm font-semibold text-slate-deep">Client terms &amp; conditions</h3>
+      <p class="text-xs text-slate-500 mb-3">Upload the client's terms and conditions for this job.</p>
+      {% with section = 'client_terms' %}{% include "_doc_uploader.html" %}{% endwith %}
+    </div>
+  </div>
 </section>
 
 {% endblock %}

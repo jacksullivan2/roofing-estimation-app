@@ -1,0 +1,27 @@
+{# Reusable upload form + document list for one section.
+   Expects: project, section. (Its own <form> — keep OUTSIDE other forms.) #}
+{% set docs = project.documents|selectattr('section','equalto',section)|list %}
+<form hx-post="/projects/{{ project.id }}/documents"
+      hx-target="#documents-panel-{{ section }}" hx-swap="innerHTML"
+      hx-encoding="multipart/form-data"
+      hx-on::after-request="if(event.detail.successful) this.reset()"
+      class="flex flex-wrap items-center gap-3 mb-4">
+  <input type="hidden" name="section" value="{{ section }}" />
+  <label class="flex-1 min-w-[240px]">
+    <input type="file" name="files" multiple
+           class="block w-full text-sm text-slate-600
+                  file:mr-3 file:rounded-lg file:border-0 file:bg-slate-soft
+                  file:px-4 file:py-2 file:text-slate-deep file:font-medium
+                  hover:file:bg-slate-200 cursor-pointer
+                  border border-slate-300 rounded-lg" />
+  </label>
+  <button type="submit"
+          class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors">
+    Upload
+  </button>
+  <span class="htmx-indicator text-xs text-slate-400">Uploading…</span>
+</form>
+
+<div id="documents-panel-{{ section }}">
+  {% include "_documents.html" %}
+</div>

@@ -26,6 +26,20 @@ from app.infra import local_store
 
 _INDEX_FILE = "projects.json"
 
+# Document "sections" — each upload area on the project page tags its files so
+# they render and export under the right heading. "project" is the general
+# documents area; the others are dedicated sections.
+SECTION_PROJECT = "project"
+SECTION_QUALIFICATIONS = "qualifications"
+SECTION_JOB_TERMS = "job_terms"
+SECTION_CLIENT_TERMS = "client_terms"
+DOC_SECTIONS = {
+    SECTION_PROJECT, SECTION_QUALIFICATIONS,
+    SECTION_JOB_TERMS, SECTION_CLIENT_TERMS,
+}
+# Sections that also support a free-text entry (keyed in rec["section_text"]).
+TEXT_SECTIONS = {SECTION_QUALIFICATIONS}
+
 
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #
@@ -92,7 +106,28 @@ def get_project(pid: str) -> dict | None:
     if not pid:
         return None
     rec = local_store.read_json(_record_file(pid), default=None)
+    if rec is not None:
+        _normalise(rec)
     return rec
+
+
+def _normalise(rec: dict) -> dict:
+    """Back-fill fields added after a record was first written, so older
+    projects keep working without a migration step."""
+    rec.setdefault("answers", {})
+    rec.setdefault("section_text", {})
+    for d in rec.get("documents", []):
+        d.setdefault("section", SECTION_PROJECT)
+    return rec
+
+
+def documents_in(rec: dict, section: str) -> list[dict]:
+    return [d for d in rec.get("documents", [])
+            if d.get("section", SECTION_PROJECT) == section]
+
+
+def section_text(rec: dict, section: str) -> str:
+    return (rec.get("section_text") or {}).get(section, "")
 
 
 def create_project(name: str, client: str = "", reference: str = "") -> dict:
@@ -106,6 +141,7 @@ def create_project(name: str, client: str = "", reference: str = "") -> dict:
         "updated_at": _now(),
         "documents": [],
         "answers": {},
+        "section_text": {},
     }
     local_store.write_json(_record_file(pid), rec)
     idx = _load_index()
@@ -159,8 +195,12 @@ def ext_allowed(filename: str) -> bool:
     return Path(filename).suffix.lower() in settings.ALLOWED_DOC_EXTS
 
 
-def add_documents(pid: str, files: list[tuple[str, bytes]]) -> tuple[dict, list[str]]:
-    """Save uploaded (filename, bytes) pairs. Returns (record, skipped_reasons)."""
+def add_documents(pid: str, files: list[tuple[str, bytes]],
+                  section: str = SECTION_PROJECT) -> tuple[dict, list[str]]:
+    """Save uploaded (filename, bytes) pairs under `section`. Returns
+    (record, skipped_reasons)."""
+    if section not in DOC_SECTIONS:
+        section = SECTION_PROJECT
     rec = get_project(pid)
     if not rec:
         raise KeyError(pid)
@@ -177,7 +217,7 @@ def add_documents(pid: str, files: list[tuple[str, bytes]]) -> tuple[dict, list[
         if not ext_allowed(name):
             skipped.append(f"{name}: unsupported file type")
             continue
-        # De-dupe by appending a counter.
+        # De-dupe by appending a counter (filenames are unique per project dir).
         final = name
         n = 1
         while final in existing:
@@ -191,9 +231,25 @@ def add_documents(pid: str, files: list[tuple[str, bytes]]) -> tuple[dict, list[
             "filename": final,
             "size": len(data),
             "uploaded_at": _now(),
+            "section": section,
         })
     _persist(rec)
     return rec, skipped
+
+
+def set_section_text(pid: str, section: str, text: str) -> dict:
+    """Store/clear the free-text entry for a section (e.g. qualifications)."""
+    rec = get_project(pid)
+    if not rec:
+        raise KeyError(pid)
+    st = dict(rec.get("section_text", {}))
+    text = (text or "").strip()
+    if text:
+        st[section] = text
+    else:
+        st.pop(section, None)
+    rec["section_text"] = st
+    return _persist(rec)
 
 
 def remove_document(pid: str, filename: str) -> dict:
@@ -269,7 +325,17 @@ def context_export(rec: dict) -> dict:
             "client": rec.get("client", ""),
             "reference": rec.get("reference", ""),
         },
-        "documents": rec.get("documents", []),
+        "documents": documents_in(rec, SECTION_PROJECT),
+        "qualifications": {
+            "text": section_text(rec, SECTION_QUALIFICATIONS),
+            "documents": documents_in(rec, SECTION_QUALIFICATIONS),
+        },
+        "job_terms": {
+            "documents": documents_in(rec, SECTION_JOB_TERMS),
+        },
+        "client_terms": {
+            "documents": documents_in(rec, SECTION_CLIENT_TERMS),
+        },
         "context": items,
         "n_context_answers": len(items),
     }

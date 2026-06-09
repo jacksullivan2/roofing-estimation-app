@@ -119,10 +119,20 @@ def detail_page(pid: str, request: Request,
 # Documents                                                                    #
 # --------------------------------------------------------------------------- #
 
+def _docs_fragment(request: Request, rec: dict, section: str, **extra):
+    return templates.TemplateResponse(request, "_documents.html", {
+        "project": rec,
+        "section": section,
+        "docs": core.documents_in(rec, section),
+        **extra,
+    })
+
+
 @router.post("/{pid}/documents", response_class=HTMLResponse)
 async def upload_documents(pid: str, request: Request,
                            sid: str = Depends(auth.require_login),
-                           files: list[UploadFile] = File(default=[])):
+                           files: list[UploadFile] = File(default=[]),
+                           section: str = Form(core.SECTION_PROJECT)):
     rec = core.get_project(pid)
     if not rec:
         raise HTTPException(404)
@@ -137,35 +147,45 @@ async def upload_documents(pid: str, request: Request,
         total += len(data)
         if total > settings.MAX_UPLOAD_BYTES:
             mb = settings.MAX_UPLOAD_BYTES // (1024 * 1024)
-            return templates.TemplateResponse(request, "_documents.html", {
-                "project": rec,
-                "flash_error": f"Upload exceeds {mb} MB limit",
-            })
+            return _docs_fragment(request, rec, section,
+                                  flash_error=f"Upload exceeds {mb} MB limit")
         payloads.append((name, data))
 
     skipped: list[str] = []
     if payloads:
-        rec, skipped = core.add_documents(pid, payloads)
+        rec, skipped = core.add_documents(pid, payloads, section=section)
 
-    return templates.TemplateResponse(request, "_documents.html", {
-        "project": rec,
-        "flash_ok": f"Added {len(payloads) - len(skipped)} document(s)" if payloads else None,
-        "skipped": skipped,
-    })
+    return _docs_fragment(
+        request, rec, section,
+        flash_ok=f"Added {len(payloads) - len(skipped)} document(s)" if payloads else None,
+        skipped=skipped,
+    )
 
 
 @router.post("/{pid}/documents/delete", response_class=HTMLResponse)
 def delete_document(pid: str, request: Request,
                     sid: str = Depends(auth.require_login),
-                    filename: str = Form(...)):
+                    filename: str = Form(...),
+                    section: str = Form(core.SECTION_PROJECT)):
     rec = core.get_project(pid)
     if not rec:
         raise HTTPException(404)
     rec = core.remove_document(pid, filename)
-    return templates.TemplateResponse(request, "_documents.html", {
-        "project": rec,
-        "flash_ok": "Document removed",
-    })
+    return _docs_fragment(request, rec, section, flash_ok="Document removed")
+
+
+@router.post("/{pid}/section-text", response_class=HTMLResponse)
+def save_section_text(pid: str, request: Request,
+                      sid: str = Depends(auth.require_login),
+                      section: str = Form(...), text: str = Form("")):
+    rec = core.get_project(pid)
+    if not rec:
+        raise HTTPException(404)
+    core.set_section_text(pid, section, text)
+    return HTMLResponse(
+        '<span class="text-xs text-emerald-700 bg-emerald-50 border '
+        'border-emerald-200 rounded-full px-2.5 py-1">Saved</span>'
+    )
 
 
 @router.get("/{pid}/documents/{filename}")
