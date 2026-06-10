@@ -42,6 +42,19 @@ The context section is bookended by three dedicated areas:
 Export everything — answers, qualifications, and both T&C sets — with
 **Export context (JSON)**.
 
+**Job parameters** — a card at the top of the project captures the **profit
+markup (%)** and **waste factor (%)** to apply to the job. They save with the
+context and appear in the export and the compiled document.
+
+**Two actions** at the bottom of the context section:
+
+- **Save context** — persist everything so you can return and finish later.
+- **Generate the estimate** — saves first, then compiles all project context
+  (job parameters, qualifications, every answered question, and the document
+  references) into a single Markdown document and attaches it to the project's
+  uploaded documents. Re-generating replaces the previous summary. This is
+  step 1 of the estimate workflow; later steps will build on this artefact.
+
 ---
 
 ## Run it (Docker)

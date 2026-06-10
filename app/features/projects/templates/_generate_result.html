@@ -1,0 +1,13 @@
+{# HTMX response for "Generate the estimate" (step 1).
+   Shows a confirmation + link, and refreshes the project documents panel
+   out-of-band so the new summary appears in section 1 immediately. #}
+<div class="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
+  <p class="font-medium">Context compiled into a single document and added to the project documents.</p>
+  <a href="/projects/{{ project.id }}/documents/{{ filename|urlencode }}"
+     class="inline-block mt-1 text-emerald-700 underline">Download “{{ filename }}”</a>
+</div>
+
+{# Out-of-band: re-render the project documents list so it now includes the summary. #}
+<div id="documents-panel-project" hx-swap-oob="true">
+  {% include "_documents.html" %}
+</div>

@@ -40,6 +40,10 @@ DOC_SECTIONS = {
 # Sections that also support a free-text entry (keyed in rec["section_text"]).
 TEXT_SECTIONS = {SECTION_QUALIFICATIONS}
 
+# Filename of the compiled context document produced by "Generate the estimate".
+# Re-generating replaces the previous one rather than piling up copies.
+GENERATED_CONTEXT_NAME = "Project Context Summary.md"
+
 
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #
@@ -116,6 +120,8 @@ def _normalise(rec: dict) -> dict:
     projects keep working without a migration step."""
     rec.setdefault("answers", {})
     rec.setdefault("section_text", {})
+    rec.setdefault("markup_pct", None)
+    rec.setdefault("waste_pct", None)
     for d in rec.get("documents", []):
         d.setdefault("section", SECTION_PROJECT)
     return rec
@@ -142,6 +148,8 @@ def create_project(name: str, client: str = "", reference: str = "") -> dict:
         "documents": [],
         "answers": {},
         "section_text": {},
+        "markup_pct": None,
+        "waste_pct": None,
     }
     local_store.write_json(_record_file(pid), rec)
     idx = _load_index()
@@ -298,6 +306,181 @@ def answered_count(rec: dict) -> int:
     return sum(1 for v in rec.get("answers", {}).values() if _has_value(v))
 
 
+# --------------------------------------------------------------------------- #
+# Job parameters (markup / waste)                                             #
+# --------------------------------------------------------------------------- #
+
+def _parse_pct(raw) -> float | None:
+    """Parse a percentage input to a float, or None if blank/invalid.
+    Accepts '12', '12.5', '12%'. Clamps to a sane 0–100 range."""
+    if raw is None:
+        return None
+    s = str(raw).strip().rstrip("%").strip()
+    if s == "":
+        return None
+    try:
+        v = float(s)
+    except ValueError:
+        return None
+    return max(0.0, min(v, 100.0))
+
+
+def set_job_params(pid: str, markup_pct, waste_pct) -> dict:
+    """Store the profit markup % and waste factor %. Blank clears the value."""
+    rec = get_project(pid)
+    if not rec:
+        raise KeyError(pid)
+    rec["markup_pct"] = _parse_pct(markup_pct)
+    rec["waste_pct"] = _parse_pct(waste_pct)
+    return _persist(rec)
+
+
+# --------------------------------------------------------------------------- #
+# Context document compilation ("Generate the estimate" — step 1)             #
+# --------------------------------------------------------------------------- #
+
+def _fmt_pct(v) -> str:
+    return f"{v:g}%" if isinstance(v, (int, float)) else "not set"
+
+
+def build_context_document(rec: dict) -> tuple[str, bytes]:
+    """Compile every piece of captured context into one Markdown document.
+
+    Returns (filename, bytes). This is the single artefact the estimation
+    workflow consumes; it is attached back to the project's documents so the
+    estimator can see exactly what was handed to the estimate.
+    """
+    import datetime as _dt
+
+    idx = question_map.question_index()
+    L: list[str] = []
+    a = L.append
+
+    a(f"# Project Context Summary — {rec.get('name', 'Untitled project')}")
+    a("")
+    a(f"*Generated {_dt.datetime.now().strftime('%d %b %Y, %H:%M')}*")
+    a("")
+    a("## Project")
+    a(f"- **Name:** {rec.get('name', '')}")
+    if rec.get("client"):
+        a(f"- **Client:** {rec['client']}")
+    if rec.get("reference"):
+        a(f"- **Reference:** {rec['reference']}")
+    a("")
+    a("## Job parameters")
+    a(f"- **Profit markup:** {_fmt_pct(rec.get('markup_pct'))}")
+    a(f"- **Waste factor:** {_fmt_pct(rec.get('waste_pct'))}")
+    a("")
+
+    # Qualifications.
+    qual_text = section_text(rec, SECTION_QUALIFICATIONS)
+    qual_docs = documents_in(rec, SECTION_QUALIFICATIONS)
+    a("## Qualifications")
+    if qual_text:
+        a(qual_text)
+    if qual_docs:
+        a("")
+        a("Attached qualification documents:")
+        for d in qual_docs:
+            a(f"- {d['filename']}")
+    if not qual_text and not qual_docs:
+        a("_None provided._")
+    a("")
+
+    # Roofing context answers, grouped by element group → sub-element.
+    a("## Roofing context")
+    answers = rec.get("answers", {})
+    grouped: dict[str, dict[str, list[tuple[dict, object]]]] = {}
+    order: list[str] = []
+    for qid, val in answers.items():
+        if qid not in idx or not _has_value(val):
+            continue
+        q = idx[qid]
+        g, sub = q["group"], q["subelement"]
+        if g not in grouped:
+            grouped[g] = {}
+            order.append(g)
+        grouped[g].setdefault(sub, []).append((q, val))
+    if not order:
+        a("_No context questions answered yet._")
+    for g in order:
+        a("")
+        a(f"### {g}")
+        for sub, items in grouped[g].items():
+            a(f"**{sub}**")
+            a("")
+            for q, val in items:
+                if isinstance(val, (list, tuple)):
+                    ans = ", ".join(str(x) for x in val)
+                else:
+                    ans = str(val)
+                unit = f" {q['unit']}" if q.get("unit") else ""
+                a(f"- {q['question']} — **{ans}{unit}**  ")
+                a(f"  _({q['qid']}; feeds {q.get('feeds_step', '')})_")
+            a("")
+
+    # Reference lists of attached documents.
+    proj_docs = [d for d in documents_in(rec, SECTION_PROJECT)
+                 if d["filename"] != GENERATED_CONTEXT_NAME]
+    a("## Project documents")
+    if proj_docs:
+        for d in proj_docs:
+            a(f"- {d['filename']}")
+    else:
+        a("_None uploaded._")
+    a("")
+    for sect, label in ((SECTION_JOB_TERMS, "Job terms & conditions"),
+                        (SECTION_CLIENT_TERMS, "Client terms & conditions")):
+        docs = documents_in(rec, sect)
+        a(f"## {label}")
+        if docs:
+            for d in docs:
+                a(f"- {d['filename']}")
+        else:
+            a("_None uploaded._")
+        a("")
+
+    text = "\n".join(L).rstrip() + "\n"
+    return GENERATED_CONTEXT_NAME, text.encode("utf-8")
+
+
+def generate_estimate(pid: str) -> tuple[dict, str]:
+    """Step 1 of the estimate workflow: compile all project context into a
+    single document and attach it to the project's uploaded documents
+    (replacing any previously generated copy). Returns (record, filename).
+
+    Later workflow steps will be triggered from here.
+    """
+    rec = get_project(pid)
+    if not rec:
+        raise KeyError(pid)
+
+    filename, data = build_context_document(rec)
+
+    # Remove any previous generated summary (file + metadata) so we don't
+    # accumulate duplicates on re-generation.
+    rec["documents"] = [d for d in rec["documents"]
+                        if d.get("filename") != filename]
+    fpath = local_store.uploads_dir() / pid / _safe_filename(filename)
+    try:
+        fpath.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+    pdir = local_store.uploads_dir() / pid
+    pdir.mkdir(parents=True, exist_ok=True)
+    (pdir / _safe_filename(filename)).write_bytes(data)
+    rec["documents"].append({
+        "filename": filename,
+        "size": len(data),
+        "uploaded_at": _now(),
+        "section": SECTION_PROJECT,
+        "generated": True,
+    })
+    _persist(rec)
+    return rec, filename
+
+
 def context_export(rec: dict) -> dict:
     """Flatten answers into an estimation-ready structure: only answered
     questions, each with its full question-map metadata. This is what a later
@@ -324,6 +507,8 @@ def context_export(rec: dict) -> dict:
             "name": rec.get("name", ""),
             "client": rec.get("client", ""),
             "reference": rec.get("reference", ""),
+            "markup_pct": rec.get("markup_pct"),
+            "waste_pct": rec.get("waste_pct"),
         },
         "documents": documents_in(rec, SECTION_PROJECT),
         "qualifications": {

@@ -205,23 +205,50 @@ def download_document(pid: str, filename: str,
 # Context answers                                                              #
 # --------------------------------------------------------------------------- #
 
+def _collapse(form) -> dict[str, object]:
+    """Collapse a form multidict: multi-selects produce repeated keys -> list."""
+    posted: dict[str, object] = {}
+    for key in form.keys():
+        values = form.getlist(key)
+        posted[key] = values if len(values) > 1 else values[0]
+    return posted
+
+
+def _save_form(pid: str, posted: dict) -> dict:
+    """Persist answers plus the job parameters (markup / waste) from a submit."""
+    core.set_job_params(pid, posted.get("markup_pct"), posted.get("waste_pct"))
+    return core.save_answers(pid, posted)
+
+
 @router.post("/{pid}/context", response_class=HTMLResponse)
 async def save_context(pid: str, request: Request,
                        sid: str = Depends(auth.require_login)):
     rec = core.get_project(pid)
     if not rec:
         raise HTTPException(404)
-    form = await request.form()
-    # Collapse the multidict: multi-selects produce repeated keys -> list.
-    posted: dict[str, object] = {}
-    for key in form.keys():
-        values = form.getlist(key)
-        posted[key] = values if len(values) > 1 else values[0]
-    rec = core.save_answers(pid, posted)
+    rec = _save_form(pid, _collapse(await request.form()))
     return templates.TemplateResponse(request, "_save_status.html", {
         "answered": core.answered_count(rec),
         "total_questions": question_map.total_questions(),
         "saved": True,
+    })
+
+
+@router.post("/{pid}/generate", response_class=HTMLResponse)
+async def generate_estimate(pid: str, request: Request,
+                            sid: str = Depends(auth.require_login)):
+    """Save the latest context, then compile it all into one document and
+    attach it to the project's uploaded documents (workflow step 1)."""
+    rec = core.get_project(pid)
+    if not rec:
+        raise HTTPException(404)
+    _save_form(pid, _collapse(await request.form()))
+    rec, filename = core.generate_estimate(pid)
+    return templates.TemplateResponse(request, "_generate_result.html", {
+        "project": rec,
+        "filename": filename,
+        "section": core.SECTION_PROJECT,
+        "docs": core.documents_in(rec, core.SECTION_PROJECT),
     })
 
 

@@ -27,6 +27,32 @@
   </div>
 </div>
 
+<!-- ====================== JOB PARAMETERS ====================== -->
+<section class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 mb-8">
+  <div class="flex flex-wrap items-end gap-6">
+    <div>
+      <h2 class="text-sm font-semibold text-slate-deep">Job parameters</h2>
+      <p class="text-xs text-slate-500">Applied across the estimate. Saved with the context.</p>
+    </div>
+    <div id="job-params" class="flex flex-wrap items-end gap-5">
+      <label class="block">
+        <span class="block text-xs font-medium text-slate-500 mb-1">Profit markup (%)</span>
+        <input type="number" step="any" min="0" max="100" name="markup_pct"
+               value="{{ project.markup_pct if project.markup_pct is not none else '' }}"
+               placeholder="e.g. 20"
+               class="w-36 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+      </label>
+      <label class="block">
+        <span class="block text-xs font-medium text-slate-500 mb-1">Waste factor (%)</span>
+        <input type="number" step="any" min="0" max="100" name="waste_pct"
+               value="{{ project.waste_pct if project.waste_pct is not none else '' }}"
+               placeholder="e.g. 10"
+               class="w-36 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+      </label>
+    </div>
+  </div>
+</section>
+
 <!-- ====================== SECTION 1: DOCUMENTS ====================== -->
 <section class="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mb-8">
   <div class="flex items-center gap-2 mb-1">
@@ -86,8 +112,10 @@
     {% with section = 'qualifications' %}{% include "_doc_uploader.html" %}{% endwith %}
   </div>
 
-  <form hx-post="/projects/{{ project.id }}/context"
+  <form id="context-form"
+        hx-post="/projects/{{ project.id }}/context"
         hx-target="#save-status" hx-swap="innerHTML"
+        hx-include="#job-params"
         class="mt-5 ml-8">
 
     <div class="space-y-3">
@@ -171,13 +199,21 @@
       {% endfor %}
     </div>
 
-    <div class="sticky bottom-0 mt-6 -mx-8 px-8 py-4 bg-white/90 backdrop-blur border-t border-slate-200 flex items-center gap-3">
+    <div class="sticky bottom-0 mt-6 -mx-8 px-8 py-4 bg-white/90 backdrop-blur border-t border-slate-200 flex items-center gap-3 flex-wrap">
       <button type="submit"
-              class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
+              class="border border-slate-300 hover:border-slate-mid text-slate-deep text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
         Save context
       </button>
-      <span class="htmx-indicator text-xs text-slate-400">Saving…</span>
+      <button type="button"
+              hx-post="/projects/{{ project.id }}/generate"
+              hx-target="#generate-result" hx-swap="innerHTML"
+              class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
+        Generate the estimate
+      </button>
+      <span class="htmx-indicator text-xs text-slate-400">Working…</span>
+      <span class="text-xs text-slate-400">Save lets you return later; Generate compiles everything into one document.</span>
     </div>
+    <div id="generate-result" class="mt-4"></div>
   </form>
 
   <!-- Terms & conditions (bottom of context) -->
