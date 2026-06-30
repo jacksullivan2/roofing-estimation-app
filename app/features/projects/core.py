@@ -40,9 +40,12 @@ DOC_SECTIONS = {
 # Sections that also support a free-text entry (keyed in rec["section_text"]).
 TEXT_SECTIONS = {SECTION_QUALIFICATIONS}
 
-# Filename of the compiled context document produced by "Generate the estimate".
-# Re-generating replaces the previous one rather than piling up copies.
-GENERATED_CONTEXT_NAME = "Project Context Summary.md"
+# The compiled context document is named after the project, e.g.
+# "Project Context 14 Mill Street.md". Re-generating replaces the previous one
+# (matched by the generated flag) rather than piling up copies.
+def context_doc_filename(rec: dict) -> str:
+    name = _safe_filename(rec.get("name", "") or "project")
+    return f"Project Context {name}.md"
 
 
 # --------------------------------------------------------------------------- #
@@ -419,9 +422,9 @@ def build_context_document(rec: dict) -> tuple[str, bytes]:
                 a(f"  _({q['qid']}; feeds {q.get('feeds_step', '')})_")
             a("")
 
-    # Reference lists of attached documents.
+    # Reference lists of attached documents (exclude the generated summary).
     proj_docs = [d for d in documents_in(rec, SECTION_PROJECT)
-                 if d["filename"] != GENERATED_CONTEXT_NAME]
+                 if not d.get("generated")]
     a("## Project documents")
     if proj_docs:
         for d in proj_docs:
@@ -441,7 +444,7 @@ def build_context_document(rec: dict) -> tuple[str, bytes]:
         a("")
 
     text = "\n".join(L).rstrip() + "\n"
-    return GENERATED_CONTEXT_NAME, text.encode("utf-8")
+    return context_doc_filename(rec), text.encode("utf-8")
 
 
 def generate_estimate(pid: str) -> tuple[dict, str]:
@@ -457,15 +460,19 @@ def generate_estimate(pid: str) -> tuple[dict, str]:
 
     filename, data = build_context_document(rec)
 
-    # Remove any previous generated summary (file + metadata) so we don't
-    # accumulate duplicates on re-generation.
-    rec["documents"] = [d for d in rec["documents"]
-                        if d.get("filename") != filename]
-    fpath = local_store.uploads_dir() / pid / _safe_filename(filename)
-    try:
-        fpath.unlink(missing_ok=True)
-    except OSError:
-        pass
+    # Remove any previously generated context doc (file + metadata), matched by
+    # the generated flag so a project rename doesn't leave an orphan copy.
+    keep = []
+    for d in rec["documents"]:
+        if d.get("generated"):
+            old = local_store.uploads_dir() / pid / _safe_filename(d["filename"])
+            try:
+                old.unlink(missing_ok=True)
+            except OSError:
+                pass
+        else:
+            keep.append(d)
+    rec["documents"] = keep
 
     pdir = local_store.uploads_dir() / pid
     pdir.mkdir(parents=True, exist_ok=True)
@@ -479,6 +486,22 @@ def generate_estimate(pid: str) -> tuple[dict, str]:
     })
     _persist(rec)
     return rec, filename
+
+
+def read_document_bytes(pid: str, filename: str) -> bytes | None:
+    p = document_path(pid, filename)
+    return p.read_bytes() if p else None
+
+
+def project_document_payloads(rec: dict) -> list[dict]:
+    """All project-section documents as {filename, bytes} for handing to the
+    AI model. Skips any file that can't be read."""
+    out: list[dict] = []
+    for d in documents_in(rec, SECTION_PROJECT):
+        data = read_document_bytes(rec["id"], d["filename"])
+        if data is not None:
+            out.append({"filename": d["filename"], "bytes": data})
+    return out
 
 
 def context_export(rec: dict) -> dict:

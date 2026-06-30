@@ -8,5 +8,6 @@ venv/
 .env
 *.md
 !app/data/*.json
+!_agent_prompts/*.md
 data/
 .DS_Store

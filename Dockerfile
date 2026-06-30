@@ -22,8 +22,9 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Application code.
+# Application code + bundled agent-prompt fallback (synced from S3 in prod).
 COPY app ./app
+COPY _agent_prompts ./_agent_prompts
 
 # Persistent data dir for projects, answers and uploaded documents. Mount a
 # volume here in production so it survives container restarts.

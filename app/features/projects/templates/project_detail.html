@@ -207,13 +207,20 @@
       <button type="button"
               hx-post="/projects/{{ project.id }}/generate"
               hx-target="#generate-result" hx-swap="innerHTML"
-              class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
+              class="border border-slate-deep text-slate-deep hover:bg-slate-soft text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
         Generate the estimate
       </button>
+      <button type="button"
+              hx-post="/projects/{{ project.id }}/tender"
+              hx-target="#tender-result" hx-swap="innerHTML"
+              class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
+        Estimate tender
+      </button>
       <span class="htmx-indicator text-xs text-slate-400">Working…</span>
-      <span class="text-xs text-slate-400">Save lets you return later; Generate compiles everything into one document.</span>
+      <span class="text-xs text-slate-400">Save to return later · Generate compiles the context doc · Estimate tender runs the full workflow.</span>
     </div>
     <div id="generate-result" class="mt-4"></div>
+    <div id="tender-result" class="mt-4"></div>
   </form>
 
   <!-- Terms & conditions (bottom of context) -->

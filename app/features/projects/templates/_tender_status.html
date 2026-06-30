@@ -1,0 +1,61 @@
+{# Tender workflow status panel. Self-replaces via polling until terminal.
+   Expects: project, job. On done also: section, docs (for OOB doc refresh). #}
+<div id="tender-status"
+     {% if job.status in ('queued', 'running') %}
+       hx-get="/projects/{{ project.id }}/tender/{{ job.job_id }}/status"
+       hx-trigger="load delay:1.5s" hx-swap="outerHTML"
+     {% endif %}
+     class="border rounded-lg p-4
+            {% if job.status == 'error' %}border-red-200 bg-red-50
+            {% elif job.status == 'done' %}border-emerald-200 bg-emerald-50
+            {% else %}border-slate-200 bg-slate-50{% endif %}">
+
+  {% if job.status in ('queued', 'running') %}
+    <div class="flex items-center gap-3">
+      <svg class="animate-spin h-4 w-4 text-slate-mid" viewBox="0 0 24 24" fill="none">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+      </svg>
+      <div>
+        <p class="text-sm font-medium text-slate-deep">Estimating tender…</p>
+        <p class="text-xs text-slate-500">{{ job.step or 'Starting…' }}</p>
+      </div>
+    </div>
+
+  {% elif job.status == 'error' %}
+    <p class="text-sm font-medium text-red-800">Tender estimation failed</p>
+    <p class="text-xs text-red-700 mt-1">{{ job.error }}</p>
+
+  {% elif job.status == 'done' %}
+    <p class="text-sm font-medium text-emerald-800">Tender estimate ready</p>
+    <p class="text-xs text-emerald-700 mt-1">
+      Context compiled into “{{ job.context_filename }}”.
+      Workflow steps: <span class="num">{{ job.prompts_count }}</span>
+      ({{ 'from S3' if job.prompt_source == 's3' else 'local fallback' if job.prompt_source == 'local' else 'none found' }}).
+    </p>
+    {% if job.notes %}
+    <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-2">{{ job.notes }}</p>
+    {% endif %}
+    <div class="flex flex-wrap gap-3 mt-3">
+      <a href="/projects/{{ project.id }}/tender/{{ job.job_id }}/download/pricing"
+         class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors">
+        Download pricing sheet
+      </a>
+      <a href="/projects/{{ project.id }}/tender/{{ job.job_id }}/download/tender"
+         class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors">
+        Download tender document
+      </a>
+      <a href="/projects/{{ project.id }}/documents/{{ job.context_filename|urlencode }}"
+         class="border border-slate-300 hover:border-slate-mid text-slate-deep text-sm rounded-lg px-4 py-2 transition-colors">
+        Project context document
+      </a>
+    </div>
+
+    {# Refresh the project documents list out-of-band so the new context doc shows. #}
+    {% if docs is defined %}
+    <div id="documents-panel-project" hx-swap-oob="true">
+      {% include "_documents.html" %}
+    </div>
+    {% endif %}
+  {% endif %}
+</div>

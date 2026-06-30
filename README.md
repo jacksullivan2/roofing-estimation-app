@@ -46,14 +46,42 @@ Export everything — answers, qualifications, and both T&C sets — with
 markup (%)** and **waste factor (%)** to apply to the job. They save with the
 context and appear in the export and the compiled document.
 
-**Two actions** at the bottom of the context section:
+**Three actions** at the bottom of the context section:
 
 - **Save context** — persist everything so you can return and finish later.
-- **Generate the estimate** — saves first, then compiles all project context
-  (job parameters, qualifications, every answered question, and the document
-  references) into a single Markdown document and attaches it to the project's
-  uploaded documents. Re-generating replaces the previous summary. This is
-  step 1 of the estimate workflow; later steps will build on this artefact.
+- **Generate the estimate** — compiles all project context (job parameters,
+  qualifications, every answered question, document references) into a single
+  Markdown document, *Project Context &lt;name&gt;*, and attaches it to the
+  project's uploaded documents. Re-generating replaces the previous one.
+- **Estimate tender** — runs the full workflow (below) in the background, with
+  a live status panel, and offers the pricing sheet + tender for download.
+
+## Estimate tender workflow
+
+Clicking **Estimate tender** runs these steps in a background job:
+
+1. Compile all project context (including profit & waste %) into
+   *Project Context &lt;name&gt;* and attach it to the uploaded project documents.
+2. Retrieve the workflow-step markdown files from **AWS S3** — falling back to
+   the bundled `_agent_prompts/` folder when S3 isn't configured.
+3. Pass those steps + the project documents to an **AI model** to generate the
+   **pricing sheet** (`.xlsx`) and the **tender document**.
+4. Return both to the front end for download.
+
+### Configuring S3 + the AI model
+
+These are optional — see `.env.example`. **Until they're set the workflow still
+runs end to end**: prompts come from the local `_agent_prompts/` folder and the
+AI step produces clearly-labelled *placeholder* pricing/tender outputs, so the
+plumbing is testable today.
+
+| Concern | Where to wire it |
+| --- | --- |
+| S3 location for prompts | `AGENT_PROMPTS_S3_BUCKET` / `AGENT_PROMPTS_S3_PREFIX` / `AWS_REGION` + standard AWS creds → `app/infra/s3_client.py` |
+| AI provider & keys | `AI_PROVIDER` (`bedrock`\|`http`), `AI_API_KEY`, `AI_ENDPOINT`, `AI_MODEL_ID` → complete the matching branch in `app/infra/ai_client.py:_invoke_remote` |
+
+The `http` provider branch is implemented against a simple base64-JSON
+contract; the `bedrock` branch has a marked `TODO` for the `invoke_model` call.
 
 ---
 
@@ -95,12 +123,16 @@ app/
   question_map.py          loads app/data/question_map.json
   data/question_map.json   the Question Map (groups → sub-elements → questions)
   infra/local_store.py     atomic JSON store + uploads dir on the data volume
+  infra/s3_client.py       fetch agent-prompt step files from S3 (local fallback)
+  infra/ai_client.py       AI model call → pricing sheet + tender (placeholder if unset)
   features/projects/
-    routes.py              /projects/* routes (list, detail, upload, context, export)
-    core.py                project persistence + document handling
-    templates/             projects_list, project_detail, _documents, _save_status
+    routes.py              /projects/* routes (list, detail, upload, context, tender)
+    core.py                project persistence, documents, context-doc compilation
+    tender.py              background runner for the Estimate tender workflow
+    templates/             project_detail, _documents, _doc_uploader, _tender_status, …
   templates/               base.html, _nav.html, login.html (shared)
   static/                  favicon
+_agent_prompts/            workflow-step markdown (local fallback for S3)
 ```
 
 ## Data & persistence

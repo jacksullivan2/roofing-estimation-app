@@ -23,8 +23,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from app import auth, question_map, settings
-from . import core
+from app import auth, question_map, sessions, settings
+from . import core, tender
 
 LOGGER = logging.getLogger(__name__)
 
@@ -250,6 +250,55 @@ async def generate_estimate(pid: str, request: Request,
         "section": core.SECTION_PROJECT,
         "docs": core.documents_in(rec, core.SECTION_PROJECT),
     })
+
+
+# --------------------------------------------------------------------------- #
+# Estimate tender workflow                                                     #
+# --------------------------------------------------------------------------- #
+
+@router.post("/{pid}/tender", response_class=HTMLResponse)
+async def start_tender(pid: str, request: Request,
+                       sid: str = Depends(auth.require_login)):
+    """Save the latest context, then kick off the background tender workflow
+    and return the status panel (which polls itself until complete)."""
+    rec = core.get_project(pid)
+    if not rec:
+        raise HTTPException(404)
+    _save_form(pid, _collapse(await request.form()))
+    job = sessions.create_tender_job(pid)
+    tender.start(job.job_id)
+    return templates.TemplateResponse(request, "_tender_status.html", {
+        "project": rec, "job": job,
+    })
+
+
+@router.get("/{pid}/tender/{job_id}/status", response_class=HTMLResponse)
+def tender_status(pid: str, job_id: str, request: Request,
+                  sid: str = Depends(auth.require_login)):
+    job = sessions.get_tender_job(job_id)
+    if not job or job.project_id != pid:
+        raise HTTPException(404)
+    ctx = {"project": core.get_project(pid), "job": job}
+    if job.status == "done":
+        ctx["section"] = core.SECTION_PROJECT
+        ctx["docs"] = core.documents_in(ctx["project"], core.SECTION_PROJECT)
+    return templates.TemplateResponse(request, "_tender_status.html", ctx)
+
+
+@router.get("/{pid}/tender/{job_id}/download/{which}")
+def tender_download(pid: str, job_id: str, which: str,
+                    sid: str = Depends(auth.require_login)):
+    job = sessions.get_tender_job(job_id)
+    if not job or job.project_id != pid or job.status != "done":
+        raise HTTPException(404)
+    if which == "pricing" and job.pricing_bytes is not None:
+        data, name, media = job.pricing_bytes, job.pricing_filename, job.pricing_media_type
+    elif which == "tender" and job.tender_bytes is not None:
+        data, name, media = job.tender_bytes, job.tender_filename, job.tender_media_type
+    else:
+        raise HTTPException(404)
+    return Response(content=data, media_type=media or "application/octet-stream",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @router.get("/{pid}/export.json")
