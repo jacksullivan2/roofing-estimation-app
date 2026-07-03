@@ -24,7 +24,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from app import auth, question_map, sessions, settings
-from . import core, tender
+from app.infra import s3_config
+from . import core, repo, tender
 
 LOGGER = logging.getLogger(__name__)
 
@@ -62,25 +63,90 @@ def _ts(epoch) -> str:
         return ""
 
 
+def _numg(v) -> str:
+    """Tidy numeric display: 22.0 -> '22', 12.5 -> '12.5', None -> ''."""
+    if isinstance(v, (int, float)):
+        return f"{v:g}"
+    return ""
+
+
 templates.env.filters["human_size"] = _human_size
 templates.env.filters["ts"] = _ts
+templates.env.filters["numg"] = _numg
 
 
 # --------------------------------------------------------------------------- #
 # List + create                                                               #
 # --------------------------------------------------------------------------- #
 
+def _storage_ctx(status: str | None = None, ok: bool | None = None) -> dict:
+    cfg = s3_config.get()
+    return {
+        "s3": {
+            "enabled": cfg.get("enabled"),
+            "bucket": cfg.get("bucket", ""),
+            "region": cfg.get("region", ""),
+            "prefix": cfg.get("prefix", ""),
+            "access_key_id": cfg.get("access_key_id", ""),
+            "has_secret": bool(cfg.get("secret_access_key")),
+            "boto3": s3_config.boto3_available(),
+        },
+        "storage_mode": repo.storage_mode(),
+        "storage_status": status,
+        "storage_ok": ok,
+    }
+
+
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 def list_page(request: Request, sid: str = Depends(auth.require_login),
-              error: str | None = None):
+              error: str | None = None, s3msg: str | None = None,
+              s3ok: str | None = None):
     projects = core.list_projects()
-    return templates.TemplateResponse(request, "projects_list.html", {
+    ctx = {
         "active": "projects",
         "projects": projects,
         "error": error,
         "total_questions": question_map.total_questions(),
-    })
+    }
+    ok = None if s3ok is None else (s3ok == "1")
+    ctx.update(_storage_ctx(status=s3msg, ok=ok))
+    return templates.TemplateResponse(request, "projects_list.html", ctx)
+
+
+@router.post("/storage")
+def save_storage(request: Request, sid: str = Depends(auth.require_login),
+                 bucket: str = Form(""), region: str = Form(""),
+                 prefix: str = Form("projects/"),
+                 access_key_id: str = Form(""),
+                 secret_access_key: str = Form(""),
+                 enabled: str = Form("on")):
+    if not bucket.strip():
+        return RedirectResponse(
+            "/projects?s3ok=0&s3msg=" + _qs("Enter a bucket name."), status_code=303)
+    cfg = s3_config.save(
+        bucket=bucket, region=region, prefix=prefix,
+        access_key_id=access_key_id, secret_access_key=secret_access_key,
+        enabled=bool(enabled),
+    )
+    ok, msg = s3_config.test_connection(cfg)
+    return RedirectResponse(
+        f"/projects?s3ok={'1' if ok else '0'}&s3msg=" + _qs(msg), status_code=303)
+
+
+@router.post("/storage/test")
+def test_storage(request: Request, sid: str = Depends(auth.require_login)):
+    ok, msg = s3_config.test_connection()
+    return RedirectResponse(
+        f"/projects?s3ok={'1' if ok else '0'}&s3msg=" + _qs(msg), status_code=303)
+
+
+@router.post("/storage/disconnect")
+def disconnect_storage(request: Request, sid: str = Depends(auth.require_login)):
+    s3_config.clear()
+    return RedirectResponse(
+        "/projects?s3ok=1&s3msg=" + _qs("Disconnected — using local storage."),
+        status_code=303)
 
 
 @router.post("")
@@ -191,13 +257,13 @@ def save_section_text(pid: str, request: Request,
 @router.get("/{pid}/documents/{filename}")
 def download_document(pid: str, filename: str,
                       sid: str = Depends(auth.require_login)):
-    path = core.document_path(pid, filename)
-    if not path:
+    data = core.read_document_bytes(pid, filename)
+    if data is None:
         raise HTTPException(404)
     return Response(
-        content=path.read_bytes(),
+        content=data,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{path.name}"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

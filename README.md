@@ -135,18 +135,46 @@ app/
 _agent_prompts/            workflow-step markdown (local fallback for S3)
 ```
 
-## Data & persistence
+## Storage — local disk or AWS S3
 
-Everything lives under `DATA_DIR` (default `/home/data`, a Docker volume):
+Project data is written through a repository (`app/features/projects/repo.py`)
+with two backends, chosen automatically:
+
+- **AWS S3** when you connect a bucket on the homepage (**Cloud storage** panel).
+  Each project is its own folder in the bucket. Creating a project creates the
+  folder; **Save context** overwrites the project record; opening a project
+  reads it all back — markup/waste %, uploaded documents, roofing context and
+  both T&C sets.
+- **Local disk** (default) when no bucket is connected — data lives under
+  `DATA_DIR`.
+
+Connect S3 from the homepage: enter bucket, region, optional key prefix, and
+either access keys or leave them blank to use the instance role / default AWS
+credential chain. **Test connection** verifies the bucket; **Disconnect**
+reverts to local. The connection (incl. keys) is stored in
+`DATA_DIR/s3_config.json` on the app's own volume.
+
+S3 key layout per project:
+
+```
+<prefix><project-id>/project.json                 # the record (metadata, params, answers, section text, document index)
+<prefix><project-id>/documents/<filename>         # every uploaded / generated document
+```
+
+Local layout under `DATA_DIR` (default `/home/data`, a Docker volume):
 
 | Path | Contents |
 | --- | --- |
-| `projects.json` | index of all projects (summary fields) |
-| `project_<id>.json` | full record: metadata + documents + answers |
+| `project_<id>.json` | full record: metadata + params + documents + answers |
 | `uploads/<id>/` | the raw uploaded files |
+| `s3_config.json` | saved S3 connection (if configured) |
 
-All JSON writes are atomic (temp file + rename) so a crash never corrupts a
-record.
+All local JSON writes are atomic (temp file + rename). Switching backends does
+not migrate existing projects — data written to local isn't auto-copied to S3
+and vice-versa.
+
+> Tests use [`moto`](https://github.com/getmoto/moto) to mock S3
+> (`pip install "moto[s3]"`); it isn't a runtime dependency.
 
 ## Updating the question set
 

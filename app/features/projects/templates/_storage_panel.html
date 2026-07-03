@@ -1,0 +1,96 @@
+{# Cloud storage (AWS S3) connection panel for the homepage.
+   Expects: s3 (dict), storage_mode, storage_status, storage_ok. #}
+<details class="bg-white border border-slate-200 rounded-xl shadow-sm mb-8" {% if storage_status or (s3.enabled and storage_mode != 's3') %}open{% endif %}>
+  <summary class="flex items-center justify-between gap-3 px-6 py-4">
+    <span class="flex items-center gap-2">
+      <svg class="chev w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path d="M7 5l6 5-6 5V5z"/></svg>
+      <span class="font-semibold text-slate-deep">Cloud storage</span>
+    </span>
+    <span class="flex items-center gap-2">
+      {% if storage_mode == 's3' %}
+        <span class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1">
+          S3 · {{ s3.bucket }}
+        </span>
+      {% else %}
+        <span class="text-xs text-slate-500 bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1">
+          Local storage
+        </span>
+      {% endif %}
+    </span>
+  </summary>
+
+  <div class="px-6 pb-6 border-t border-slate-100 pt-4">
+    <p class="text-sm text-slate-500 mb-4">
+      Connect an AWS S3 bucket to store every project in its own folder
+      (<code class="text-xs bg-slate-100 px-1 rounded">{{ s3.prefix or 'projects/' }}&lt;project&gt;/</code>).
+      Projects, documents and saved context read and write there. Leave
+      disconnected to keep data on this machine.
+    </p>
+
+    {% if storage_status %}
+    <div class="mb-4 text-sm rounded-lg px-3 py-2 border
+                {% if storage_ok %}text-emerald-800 bg-emerald-50 border-emerald-200
+                {% else %}text-red-700 bg-red-50 border-red-200{% endif %}">
+      {{ storage_status }}
+    </div>
+    {% endif %}
+
+    {% if not s3.boto3 %}
+    <div class="mb-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+      The <code>boto3</code> library isn't installed in this environment, so S3
+      can't be used yet. It's included in the Docker image; rebuild to enable.
+    </div>
+    {% endif %}
+
+    <form method="post" action="/projects/storage" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <label class="block">
+        <span class="block text-xs font-medium text-slate-500 mb-1">S3 bucket name *</span>
+        <input name="bucket" required value="{{ s3.bucket }}" placeholder="my-roofing-bucket"
+               class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+      </label>
+      <label class="block">
+        <span class="block text-xs font-medium text-slate-500 mb-1">AWS region</span>
+        <input name="region" value="{{ s3.region }}" placeholder="eu-west-2"
+               class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+      </label>
+      <label class="block">
+        <span class="block text-xs font-medium text-slate-500 mb-1">Key prefix (folder)</span>
+        <input name="prefix" value="{{ s3.prefix }}" placeholder="projects/"
+               class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+      </label>
+      <div></div>
+      <label class="block">
+        <span class="block text-xs font-medium text-slate-500 mb-1">Access key ID</span>
+        <input name="access_key_id" value="{{ s3.access_key_id }}" autocomplete="off"
+               placeholder="AKIA…  (leave blank to use the instance role)"
+               class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+      </label>
+      <label class="block">
+        <span class="block text-xs font-medium text-slate-500 mb-1">
+          Secret access key {% if s3.has_secret %}<span class="text-emerald-600">· set</span>{% endif %}
+        </span>
+        <input name="secret_access_key" type="password" autocomplete="off"
+               placeholder="{{ '•••••••• (leave blank to keep)' if s3.has_secret else 'secret key' }}"
+               class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+      </label>
+
+      <div class="md:col-span-2 flex items-center gap-3 pt-1">
+        <button type="submit"
+                class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors">
+          Save &amp; connect
+        </button>
+        <button type="submit" formaction="/projects/storage/test"
+                class="border border-slate-300 hover:border-slate-mid text-slate-deep text-sm rounded-lg px-4 py-2 transition-colors">
+          Test connection
+        </button>
+        {% if s3.bucket %}
+        <button type="submit" formaction="/projects/storage/disconnect"
+                class="text-sm text-red-600 hover:text-red-800 px-2 py-2">
+          Disconnect
+        </button>
+        {% endif %}
+        <span class="text-xs text-slate-400">Credentials are stored on this app's data volume.</span>
+      </div>
+    </form>
+  </div>
+</details>

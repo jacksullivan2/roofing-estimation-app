@@ -5,13 +5,10 @@ A 'project' is a roofing job being prepared for estimation. It carries:
   - uploaded documents (file bytes on disk; metadata in JSON)
   - context answers (qid -> value) captured against the Question Map
 
-Storage layout under the persistent data dir:
-  projects.json                  index: {id: {summary fields}}
-  project_<id>.json              full record (metadata + documents + answers)
-  uploads/<id>/<filename>        raw uploaded files
-
-All JSON writes go through local_store's atomic helper. The index is kept in
-sync with each per-project record so the list page is one cheap read.
+Storage is delegated to a repository (app/features/projects/repo.py) which
+writes to either local disk or an AWS S3 bucket — one folder per project —
+depending on the connection the user configures on the homepage. This module
+holds no storage mechanics beyond calling the repo.
 """
 
 from __future__ import annotations
@@ -22,9 +19,7 @@ import uuid
 from pathlib import Path
 
 from app import question_map, settings
-from app.infra import local_store
-
-_INDEX_FILE = "projects.json"
+from . import repo as _repo
 
 # Document "sections" — each upload area on the project page tags its files so
 # they render and export under the right heading. "project" is the general
@@ -63,19 +58,7 @@ def _safe_filename(name: str) -> str:
     return name or "file"
 
 
-def _record_file(pid: str) -> str:
-    return f"project_{pid}.json"
-
-
-def _load_index() -> dict:
-    return local_store.read_json(_INDEX_FILE, default={})
-
-
-def _save_index(idx: dict) -> None:
-    local_store.write_json(_INDEX_FILE, idx)
-
-
-def _index_summary(rec: dict) -> dict:
+def _summary(rec: dict) -> dict:
     return {
         "id": rec["id"],
         "name": rec.get("name", ""),
@@ -103,8 +86,7 @@ def _has_value(v) -> bool:
 # --------------------------------------------------------------------------- #
 
 def list_projects() -> list[dict]:
-    idx = _load_index()
-    items = list(idx.values())
+    items = [_summary(_normalise(r)) for r in _repo.get_repo().list_records()]
     items.sort(key=lambda r: r.get("updated_at") or 0, reverse=True)
     return items
 
@@ -112,7 +94,7 @@ def list_projects() -> list[dict]:
 def get_project(pid: str) -> dict | None:
     if not pid:
         return None
-    rec = local_store.read_json(_record_file(pid), default=None)
+    rec = _repo.get_repo().read_record(pid)
     if rec is not None:
         _normalise(rec)
     return rec
@@ -154,19 +136,15 @@ def create_project(name: str, client: str = "", reference: str = "") -> dict:
         "markup_pct": None,
         "waste_pct": None,
     }
-    local_store.write_json(_record_file(pid), rec)
-    idx = _load_index()
-    idx[pid] = _index_summary(rec)
-    _save_index(idx)
+    # Writing the record creates the project's folder in the store (in S3 this
+    # establishes the <prefix><id>/ prefix).
+    _repo.get_repo().write_record(rec)
     return rec
 
 
 def _persist(rec: dict) -> dict:
     rec["updated_at"] = _now()
-    local_store.write_json(_record_file(rec["id"]), rec)
-    idx = _load_index()
-    idx[rec["id"]] = _index_summary(rec)
-    _save_index(idx)
+    _repo.get_repo().write_record(rec)
     return rec
 
 
@@ -174,27 +152,7 @@ def delete_project(pid: str) -> bool:
     rec = get_project(pid)
     if not rec:
         return False
-    # Remove uploaded files.
-    pdir = local_store.uploads_dir() / pid
-    if pdir.exists():
-        for f in pdir.glob("*"):
-            try:
-                f.unlink()
-            except OSError:
-                pass
-        try:
-            pdir.rmdir()
-        except OSError:
-            pass
-    # Remove record file + index entry.
-    rec_path = local_store.base_dir() / _record_file(pid)
-    try:
-        rec_path.unlink(missing_ok=True)
-    except OSError:
-        pass
-    idx = _load_index()
-    idx.pop(pid, None)
-    _save_index(idx)
+    _repo.get_repo().delete_project(pid)
     return True
 
 
@@ -215,8 +173,7 @@ def add_documents(pid: str, files: list[tuple[str, bytes]],
     rec = get_project(pid)
     if not rec:
         raise KeyError(pid)
-    pdir = local_store.uploads_dir() / pid
-    pdir.mkdir(parents=True, exist_ok=True)
+    repo = _repo.get_repo()
 
     skipped: list[str] = []
     existing = {d["filename"] for d in rec["documents"]}
@@ -228,7 +185,7 @@ def add_documents(pid: str, files: list[tuple[str, bytes]],
         if not ext_allowed(name):
             skipped.append(f"{name}: unsupported file type")
             continue
-        # De-dupe by appending a counter (filenames are unique per project dir).
+        # De-dupe by appending a counter (filenames are unique per project folder).
         final = name
         n = 1
         while final in existing:
@@ -236,7 +193,7 @@ def add_documents(pid: str, files: list[tuple[str, bytes]],
             suf = Path(name).suffix
             final = f"{stem} ({n}){suf}"
             n += 1
-        (pdir / final).write_bytes(data)
+        repo.write_document(pid, final, data)
         existing.add(final)
         rec["documents"].append({
             "filename": final,
@@ -268,17 +225,12 @@ def remove_document(pid: str, filename: str) -> dict:
     if not rec:
         raise KeyError(pid)
     rec["documents"] = [d for d in rec["documents"] if d["filename"] != filename]
-    fpath = local_store.uploads_dir() / pid / _safe_filename(filename)
-    try:
-        fpath.unlink(missing_ok=True)
-    except OSError:
-        pass
+    _repo.get_repo().delete_document(pid, filename)
     return _persist(rec)
 
 
-def document_path(pid: str, filename: str) -> Path | None:
-    fpath = local_store.uploads_dir() / pid / _safe_filename(filename)
-    return fpath if fpath.exists() else None
+def has_document(pid: str, filename: str) -> bool:
+    return _repo.get_repo().read_document(pid, filename) is not None
 
 
 # --------------------------------------------------------------------------- #
@@ -459,24 +411,19 @@ def generate_estimate(pid: str) -> tuple[dict, str]:
         raise KeyError(pid)
 
     filename, data = build_context_document(rec)
+    repo = _repo.get_repo()
 
     # Remove any previously generated context doc (file + metadata), matched by
     # the generated flag so a project rename doesn't leave an orphan copy.
     keep = []
     for d in rec["documents"]:
         if d.get("generated"):
-            old = local_store.uploads_dir() / pid / _safe_filename(d["filename"])
-            try:
-                old.unlink(missing_ok=True)
-            except OSError:
-                pass
+            repo.delete_document(pid, d["filename"])
         else:
             keep.append(d)
     rec["documents"] = keep
 
-    pdir = local_store.uploads_dir() / pid
-    pdir.mkdir(parents=True, exist_ok=True)
-    (pdir / _safe_filename(filename)).write_bytes(data)
+    repo.write_document(pid, filename, data)
     rec["documents"].append({
         "filename": filename,
         "size": len(data),
@@ -489,8 +436,7 @@ def generate_estimate(pid: str) -> tuple[dict, str]:
 
 
 def read_document_bytes(pid: str, filename: str) -> bytes | None:
-    p = document_path(pid, filename)
-    return p.read_bytes() if p else None
+    return _repo.get_repo().read_document(pid, filename)
 
 
 def project_document_payloads(rec: dict) -> list[dict]:

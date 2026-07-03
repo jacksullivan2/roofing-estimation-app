@@ -38,14 +38,14 @@
       <label class="block">
         <span class="block text-xs font-medium text-slate-500 mb-1">Profit markup (%)</span>
         <input type="number" step="any" min="0" max="100" name="markup_pct"
-               value="{{ project.markup_pct if project.markup_pct is not none else '' }}"
+               value="{{ project.markup_pct|numg }}"
                placeholder="e.g. 20"
                class="w-36 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
       </label>
       <label class="block">
         <span class="block text-xs font-medium text-slate-500 mb-1">Waste factor (%)</span>
         <input type="number" step="any" min="0" max="100" name="waste_pct"
-               value="{{ project.waste_pct if project.waste_pct is not none else '' }}"
+               value="{{ project.waste_pct|numg }}"
                placeholder="e.g. 10"
                class="w-36 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
       </label>
