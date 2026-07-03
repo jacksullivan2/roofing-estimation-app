@@ -49,6 +49,15 @@
                placeholder="e.g. 10"
                class="w-36 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
       </label>
+      <div class="flex items-center gap-3">
+        <button type="button"
+                hx-post="/projects/{{ project.id }}/context"
+                hx-include="#job-params" hx-target="#jobparams-status" hx-swap="innerHTML"
+                class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors">
+          Save
+        </button>
+        <span id="jobparams-status" class="text-xs text-slate-400"></span>
+      </div>
     </div>
   </div>
 </section>
@@ -194,6 +203,16 @@
             </div>
           </details>
           {% endfor %}
+
+          <div class="flex items-center gap-3 pt-1">
+            <button type="button"
+                    hx-post="/projects/{{ project.id }}/context"
+                    hx-include="#job-params" hx-target="#grpstatus-{{ g.group_id }}" hx-swap="innerHTML"
+                    class="bg-slate-deep hover:bg-slate-mid text-white text-xs font-medium rounded-lg px-4 py-2 transition-colors">
+              Save
+            </button>
+            <span id="grpstatus-{{ g.group_id }}" class="text-xs text-slate-400"></span>
+          </div>
         </div>
       </details>
       {% endfor %}
@@ -202,7 +221,7 @@
     <div class="sticky bottom-0 mt-6 -mx-8 px-8 py-4 bg-white/90 backdrop-blur border-t border-slate-200 flex items-center gap-3 flex-wrap">
       <button type="submit"
               class="border border-slate-300 hover:border-slate-mid text-slate-deep text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
-        Save context
+        Save
       </button>
       <button type="button"
               hx-post="/projects/{{ project.id }}/generate"
@@ -229,11 +248,29 @@
       <h3 class="text-sm font-semibold text-slate-deep">Job terms &amp; conditions</h3>
       <p class="text-xs text-slate-500 mb-3">Upload the terms and conditions that apply to this job.</p>
       {% with section = 'job_terms' %}{% include "_doc_uploader.html" %}{% endwith %}
+      <div class="flex items-center gap-3 mt-3">
+        <button type="button"
+                hx-post="/projects/{{ project.id }}/context"
+                hx-target="#jobterms-status" hx-swap="innerHTML"
+                class="bg-slate-deep hover:bg-slate-mid text-white text-xs font-medium rounded-lg px-4 py-2 transition-colors">
+          Save
+        </button>
+        <span id="jobterms-status" class="text-xs text-slate-400"></span>
+      </div>
     </div>
     <div class="border border-slate-200 rounded-lg p-4">
       <h3 class="text-sm font-semibold text-slate-deep">Client terms &amp; conditions</h3>
       <p class="text-xs text-slate-500 mb-3">Upload the client's terms and conditions for this job.</p>
       {% with section = 'client_terms' %}{% include "_doc_uploader.html" %}{% endwith %}
+      <div class="flex items-center gap-3 mt-3">
+        <button type="button"
+                hx-post="/projects/{{ project.id }}/context"
+                hx-target="#clientterms-status" hx-swap="innerHTML"
+                class="bg-slate-deep hover:bg-slate-mid text-white text-xs font-medium rounded-lg px-4 py-2 transition-colors">
+          Save
+        </button>
+        <span id="clientterms-status" class="text-xs text-slate-400"></span>
+      </div>
     </div>
   </div>
 </section>

@@ -281,8 +281,11 @@ def _collapse(form) -> dict[str, object]:
 
 
 def _save_form(pid: str, posted: dict) -> dict:
-    """Persist answers plus the job parameters (markup / waste) from a submit."""
-    core.set_job_params(pid, posted.get("markup_pct"), posted.get("waste_pct"))
+    """Persist a (possibly partial) submit. Job params are only written when the
+    fields are present, so a per-section save never wipes markup/waste; answers
+    are merged by qid, so unrelated sections are left untouched."""
+    if "markup_pct" in posted or "waste_pct" in posted:
+        core.set_job_params(pid, posted.get("markup_pct"), posted.get("waste_pct"))
     return core.save_answers(pid, posted)
 
 
