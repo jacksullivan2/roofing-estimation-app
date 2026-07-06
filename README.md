@@ -46,19 +46,16 @@ Export everything — answers, qualifications, and both T&C sets — with
 markup (%)** and **waste factor (%)** to apply to the job. They save with the
 context and appear in the export and the compiled document.
 
-**Three actions** at the bottom of the context section:
+**Two actions.** Every data-entry section (job parameters, each roofing
+context group, qualifications, both T&C blocks) has its own **Save** button,
+and there's a **Save** at the bottom of the context section — each writes what
+you've entered to the project's folder in storage. The green **Estimate**
+button (bottom-right) runs the full workflow below.
 
-- **Save context** — persist everything so you can return and finish later.
-- **Generate the estimate** — compiles all project context (job parameters,
-  qualifications, every answered question, document references) into a single
-  Markdown document, *Project Context &lt;name&gt;*, and attaches it to the
-  project's uploaded documents. Re-generating replaces the previous one.
-- **Estimate tender** — runs the full workflow (below) in the background, with
-  a live status panel, and offers the pricing sheet + tender for download.
+## Estimate workflow
 
-## Estimate tender workflow
-
-Clicking **Estimate tender** runs these steps in a background job:
+Clicking **Estimate** runs these steps in a background job, with a live status
+panel, then offers the pricing sheet + tender for download:
 
 1. Compile all project context (including profit & waste %) into
    *Project Context &lt;name&gt;* and attach it to the uploaded project documents.

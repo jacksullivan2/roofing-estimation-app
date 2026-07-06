@@ -17,17 +17,17 @@
         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
       </svg>
       <div>
-        <p class="text-sm font-medium text-slate-deep">Estimating tender…</p>
+        <p class="text-sm font-medium text-slate-deep">Estimating…</p>
         <p class="text-xs text-slate-500">{{ job.step or 'Starting…' }}</p>
       </div>
     </div>
 
   {% elif job.status == 'error' %}
-    <p class="text-sm font-medium text-red-800">Tender estimation failed</p>
+    <p class="text-sm font-medium text-red-800">Estimation failed</p>
     <p class="text-xs text-red-700 mt-1">{{ job.error }}</p>
 
   {% elif job.status == 'done' %}
-    <p class="text-sm font-medium text-emerald-800">Tender estimate ready</p>
+    <p class="text-sm font-medium text-emerald-800">Estimate ready</p>
     <p class="text-xs text-emerald-700 mt-1">
       Context compiled into “{{ job.context_filename }}”.
       Workflow steps: <span class="num">{{ job.prompts_count }}</span>

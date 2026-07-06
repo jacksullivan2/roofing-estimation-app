@@ -303,26 +303,8 @@ async def save_context(pid: str, request: Request,
     })
 
 
-@router.post("/{pid}/generate", response_class=HTMLResponse)
-async def generate_estimate(pid: str, request: Request,
-                            sid: str = Depends(auth.require_login)):
-    """Save the latest context, then compile it all into one document and
-    attach it to the project's uploaded documents (workflow step 1)."""
-    rec = core.get_project(pid)
-    if not rec:
-        raise HTTPException(404)
-    _save_form(pid, _collapse(await request.form()))
-    rec, filename = core.generate_estimate(pid)
-    return templates.TemplateResponse(request, "_generate_result.html", {
-        "project": rec,
-        "filename": filename,
-        "section": core.SECTION_PROJECT,
-        "docs": core.documents_in(rec, core.SECTION_PROJECT),
-    })
-
-
 # --------------------------------------------------------------------------- #
-# Estimate tender workflow                                                     #
+# Estimate workflow                                                            #
 # --------------------------------------------------------------------------- #
 
 @router.post("/{pid}/tender", response_class=HTMLResponse)

@@ -218,27 +218,24 @@
       {% endfor %}
     </div>
 
-    <div class="sticky bottom-0 mt-6 -mx-8 px-8 py-4 bg-white/90 backdrop-blur border-t border-slate-200 flex items-center gap-3 flex-wrap">
-      <button type="submit"
-              class="border border-slate-300 hover:border-slate-mid text-slate-deep text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
-        Save
-      </button>
-      <button type="button"
-              hx-post="/projects/{{ project.id }}/generate"
-              hx-target="#generate-result" hx-swap="innerHTML"
-              class="border border-slate-deep text-slate-deep hover:bg-slate-soft text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
-        Generate the estimate
-      </button>
-      <button type="button"
-              hx-post="/projects/{{ project.id }}/tender"
-              hx-target="#tender-result" hx-swap="innerHTML"
-              class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
-        Estimate tender
-      </button>
-      <span class="htmx-indicator text-xs text-slate-400">Working…</span>
-      <span class="text-xs text-slate-400">Save to return later · Generate compiles the context doc · Estimate tender runs the full workflow.</span>
+    <div class="sticky bottom-0 mt-6 -mx-8 px-8 py-4 bg-white/90 backdrop-blur border-t border-slate-200 flex items-center justify-between gap-3 flex-wrap">
+      <div class="flex items-center gap-3">
+        <button type="submit"
+                class="border border-slate-300 hover:border-slate-mid text-slate-deep text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
+          Save
+        </button>
+        <span class="text-xs text-slate-400">Saves everything you've entered to the project folder.</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="htmx-indicator text-xs text-slate-400">Working…</span>
+        <button type="button"
+                hx-post="/projects/{{ project.id }}/tender"
+                hx-target="#tender-result" hx-swap="innerHTML"
+                class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg px-6 py-2.5 shadow-sm transition-colors">
+          Estimate
+        </button>
+      </div>
     </div>
-    <div id="generate-result" class="mt-4"></div>
     <div id="tender-result" class="mt-4"></div>
   </form>
 
