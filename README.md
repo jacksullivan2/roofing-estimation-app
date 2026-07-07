@@ -13,44 +13,33 @@ persistence, and a single-image Docker container on uvicorn `:8000`.
 
 ## What it does
 
-**1. Project documents** — upload condition reports, schedules of works,
-specifications, drawings, photos and price documents. Files are stored on a
-persistent volume; you can download or remove them.
+The project page is organised into four tabs, so you never scroll a long page:
 
-**2. Roofing context** — the Question Map (17 element groups, 78 questions)
-is rendered as a two-level accordion:
+**Project Files** — upload condition reports, schedules of works,
+specifications, drawings, photos and price documents; plus a **Terms &
+conditions** area combining the Job and Client T&C uploads. Files are stored in
+the project's folder; you can download or remove them.
 
-- Each **element group** (e.g. *Balcony / Terrace / Walkway*) is a dropdown.
-- Inside, each **element / sub-element** is a dropdown that, when opened,
-  reveals its question(s) with an input box.
-- Inputs adapt to the question's data type — a dropdown for single-select
-  questions (using the Question Map's allowed values), checkboxes for
-  multi-select, a number box for quantities, and a text box otherwise. Each
-  question shows its purpose, the estimation step it feeds, and its source
-  manufacturer document.
+**Project Context** — the Question Map (17 element groups, 78 questions) as a
+set of sub-tabs down the left: **Qualifications** first, then one sub-tab per
+element group (*Project & Global Context*, *Substrate & Priming*, …). Opening a
+sub-tab shows just that section's questions. Inputs adapt to the question's data
+type — a dropdown for single-select (using the Question Map's allowed values),
+checkboxes for multi-select, a number box for quantities, a text box otherwise
+— and each shows its purpose, the estimation step it feeds, and its source
+document. Qualifications captures free text and/or an uploaded document. Each
+sub-tab has its own **Save**.
 
-Answers save over HTMX (no page reload) and progress is tracked
-(`answered / total`).
+**Job Parameters** — the **profit markup (%)** and **waste factor (%)** applied
+across the estimate, with a **Save**.
 
-The context section is bookended by three dedicated areas:
+**Estimate** — the **Save** and **Estimate** actions. Save writes everything to
+the project's storage folder so you can return later; the green **Estimate**
+button runs the full workflow below and produces the pricing sheet + tender.
 
-- **Qualifications** (top) — capture job qualifications, assumptions or
-  exclusions as free text and/or by uploading a document.
-- **Job terms & conditions** and **Client terms & conditions** (bottom) —
-  upload the relevant T&C documents for each.
-
-Export everything — answers, qualifications, and both T&C sets — with
-**Export context (JSON)**.
-
-**Job parameters** — a card at the top of the project captures the **profit
-markup (%)** and **waste factor (%)** to apply to the job. They save with the
-context and appear in the export and the compiled document.
-
-**Two actions.** Every data-entry section (job parameters, each roofing
-context group, qualifications, both T&C blocks) has its own **Save** button,
-and there's a **Save** at the bottom of the context section — each writes what
-you've entered to the project's folder in storage. The green **Estimate**
-button (bottom-right) runs the full workflow below.
+Every Save persists to the project's folder (S3 or local); a save from one tab
+never disturbs data entered in another. Export everything — answers,
+qualifications, and both T&C sets — with **Export context (JSON)**.
 
 ## Estimate workflow
 

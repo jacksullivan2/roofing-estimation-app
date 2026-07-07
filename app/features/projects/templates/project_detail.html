@@ -3,6 +3,17 @@
 {% block nav %}{% include "_nav.html" %}{% endblock %}
 {% block content %}
 
+<style>
+  .tab-btn { padding: .5rem .9rem; font-size: .875rem; font-weight: 500; color: #64748b;
+             border-bottom: 2px solid transparent; cursor: pointer; background: none; white-space: nowrap; }
+  .tab-btn:hover { color: #1F3864; }
+  .tab-btn.is-active { color: #1F3864; border-bottom-color: #1F3864; }
+  .subtab-btn { display: block; width: 100%; text-align: left; padding: .45rem .7rem; font-size: .8125rem;
+                border-radius: .5rem; color: #475569; cursor: pointer; background: none; border: none; }
+  .subtab-btn:hover { background: #F1F5F9; }
+  .subtab-btn.is-active { background: #EEF3FB; color: #1F3864; font-weight: 600; }
+</style>
+
 <div class="mb-6">
   <a href="/projects" class="text-xs text-slate-400 hover:text-slate-deep">&larr; All projects</a>
   <div class="flex items-start justify-between gap-6 mt-2">
@@ -27,249 +38,257 @@
   </div>
 </div>
 
-<!-- ====================== JOB PARAMETERS ====================== -->
-<section class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 mb-8">
-  <div class="flex flex-wrap items-end gap-6">
-    <div>
-      <h2 class="text-sm font-semibold text-slate-deep">Job parameters</h2>
-      <p class="text-xs text-slate-500">Applied across the estimate. Saved with the context.</p>
+<!-- ============================ TOP-LEVEL TABS ============================ -->
+<div data-tabs class="bg-white border border-slate-200 rounded-xl shadow-sm">
+  <div class="tabnav flex items-center gap-1 px-4 border-b border-slate-200 overflow-x-auto">
+    <button type="button" class="tab-btn" data-tab="files">Project Files</button>
+    <button type="button" class="tab-btn" data-tab="context">Project Context</button>
+    <button type="button" class="tab-btn" data-tab="params">Job Parameters</button>
+    <button type="button" class="tab-btn" data-tab="estimate">Estimate</button>
+  </div>
+
+  <div class="tabpanels p-6">
+
+    <!-- ------------------------ TAB: PROJECT FILES ------------------------ -->
+    <div data-panel="files" class="space-y-8">
+      <section>
+        <h2 class="text-lg font-semibold text-slate-deep mb-1">Project documents</h2>
+        <p class="text-sm text-slate-500 mb-4">
+          Upload condition reports, schedules of works, specifications, drawings, photos and price documents.
+        </p>
+        {% with section = 'project' %}{% include "_doc_uploader.html" %}{% endwith %}
+      </section>
+
+      <section class="border-t border-slate-100 pt-6">
+        <h2 class="text-lg font-semibold text-slate-deep mb-1">Terms &amp; conditions</h2>
+        <p class="text-sm text-slate-500 mb-4">Upload the terms and conditions for this job.</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div class="border border-slate-200 rounded-lg p-4">
+            <h3 class="text-sm font-semibold text-slate-deep mb-2">Job terms &amp; conditions</h3>
+            {% with section = 'job_terms' %}{% include "_doc_uploader.html" %}{% endwith %}
+          </div>
+          <div class="border border-slate-200 rounded-lg p-4">
+            <h3 class="text-sm font-semibold text-slate-deep mb-2">Client terms &amp; conditions</h3>
+            {% with section = 'client_terms' %}{% include "_doc_uploader.html" %}{% endwith %}
+          </div>
+        </div>
+      </section>
     </div>
-    <div id="job-params" class="flex flex-wrap items-end gap-5">
-      <label class="block">
-        <span class="block text-xs font-medium text-slate-500 mb-1">Profit markup (%)</span>
-        <input type="number" step="any" min="0" max="100" name="markup_pct"
-               value="{{ project.markup_pct|numg }}"
-               placeholder="e.g. 20"
-               class="w-36 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
-      </label>
-      <label class="block">
-        <span class="block text-xs font-medium text-slate-500 mb-1">Waste factor (%)</span>
-        <input type="number" step="any" min="0" max="100" name="waste_pct"
-               value="{{ project.waste_pct|numg }}"
-               placeholder="e.g. 10"
-               class="w-36 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
-      </label>
-      <div class="flex items-center gap-3">
+
+    <!-- ------------------------ TAB: PROJECT CONTEXT ------------------------ -->
+    <div data-panel="context">
+      <p class="text-sm text-slate-500 mb-4">
+        Pick a section on the left and answer the questions that supplement your documents. Only fill what's relevant.
+      </p>
+
+      <div data-tabs class="flex flex-col md:flex-row gap-6">
+        <!-- sub-tab nav (vertical) -->
+        <div class="tabnav md:w-64 shrink-0 md:border-r md:border-slate-100 md:pr-3 space-y-0.5 max-h-[70vh] overflow-y-auto">
+          <button type="button" class="subtab-btn" data-tab="sub-qual">Qualifications</button>
+          {% for g in groups %}
+          <button type="button" class="subtab-btn" data-tab="sub-{{ g.group_id }}">{{ g.group }}</button>
+          {% endfor %}
+        </div>
+
+        <!-- sub-tab panels -->
+        <div class="tabpanels flex-1 min-w-0">
+
+          <!-- Qualifications sub-tab -->
+          <div data-panel="sub-qual">
+            <h3 class="text-base font-semibold text-slate-deep">Qualifications</h3>
+            <p class="text-xs text-slate-500 mb-3">
+              Any qualifications, assumptions or exclusions for this job. Add as text and/or upload a document.
+            </p>
+            <form hx-post="/projects/{{ project.id }}/section-text"
+                  hx-target="#qual-text-status" hx-swap="innerHTML" class="mb-4">
+              <input type="hidden" name="section" value="qualifications" />
+              <textarea name="text" rows="3"
+                        placeholder="e.g. Price excludes asbestos removal; assumes scaffold provided by main contractor…"
+                        class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none">{{ project.section_text.get('qualifications', '') }}</textarea>
+              <div class="flex items-center gap-3 mt-2">
+                <button type="submit"
+                        class="bg-slate-deep hover:bg-slate-mid text-white text-xs font-medium rounded-lg px-4 py-2 transition-colors">
+                  Save qualifications text
+                </button>
+                <span id="qual-text-status" class="text-xs text-slate-400"></span>
+              </div>
+            </form>
+            {% with section = 'qualifications' %}{% include "_doc_uploader.html" %}{% endwith %}
+          </div>
+
+          <!-- One sub-tab per element group -->
+          {% for g in groups %}
+          <div data-panel="sub-{{ g.group_id }}">
+            <div class="flex items-center justify-between gap-3 mb-3">
+              <h3 class="text-base font-semibold text-slate-deep">{{ g.group }}</h3>
+              <span class="text-xs text-slate-400 num">{{ g.n_questions }} question{{ '' if g.n_questions == 1 else 's' }}</span>
+            </div>
+
+            <div class="space-y-6">
+              {% for sub in g.subelements %}
+              <div class="border border-slate-100 rounded-lg p-4">
+                <p class="text-sm font-medium text-ink mb-3">{{ sub.name }}</p>
+                <div class="space-y-5">
+                  {% for q in sub.questions %}
+                  {% set val = answers.get(q.qid, '') %}
+                  <div>
+                    <label for="{{ q.qid }}" class="block text-sm text-ink font-medium">
+                      {{ q.question }}
+                      {% if q.unit %}<span class="text-slate-400 font-normal">({{ q.unit }})</span>{% endif %}
+                    </label>
+
+                    {% if q.field_kind == 'select' %}
+                      <select id="{{ q.qid }}" name="{{ q.qid }}" class="ctx-field mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none">
+                        <option value="">— select —</option>
+                        {% for opt in q.options %}
+                          <option value="{{ opt }}" {% if val == opt %}selected{% endif %}>{{ opt }}</option>
+                        {% endfor %}
+                      </select>
+
+                    {% elif q.field_kind == 'multiselect' %}
+                      <div class="mt-1 flex flex-wrap gap-x-5 gap-y-1">
+                        {% for opt in q.options %}
+                        <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                          <input type="checkbox" name="{{ q.qid }}" value="{{ opt }}"
+                                 {% if val is iterable and val is not string and opt in val %}checked{% elif val == opt %}checked{% endif %}
+                                 class="ctx-field rounded border-slate-300 text-slate-deep focus:ring-slate-soft" />
+                          {{ opt }}
+                        </label>
+                        {% endfor %}
+                      </div>
+
+                    {% elif q.field_kind == 'number' %}
+                      <input id="{{ q.qid }}" name="{{ q.qid }}" type="number" step="any" value="{{ val }}"
+                             placeholder="{% if q.default %}e.g. {{ q.default }}{% endif %}"
+                             class="ctx-field mt-1 w-full sm:w-64 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+
+                    {% else %}
+                      <textarea id="{{ q.qid }}" name="{{ q.qid }}" rows="2"
+                                placeholder="{% if q.default %}Default: {{ q.default }}{% endif %}"
+                                class="ctx-field mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none">{{ val }}</textarea>
+                    {% endif %}
+
+                    <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
+                      <span class="font-mono text-slate-300">{{ q.qid }}</span>
+                      · {{ q.informs }}
+                      {% if q.feeds_step %} · <span class="text-slate-400">feeds {{ q.feeds_step }}</span>{% endif %}
+                      {% if q.source_doc %} · <span class="italic">{{ q.source_doc }}</span>{% endif %}
+                    </p>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+              {% endfor %}
+
+              <div class="flex items-center gap-3">
+                <button type="button"
+                        hx-post="/projects/{{ project.id }}/context"
+                        hx-include=".ctx-field, #job-params" hx-target="#grpstatus-{{ g.group_id }}" hx-swap="innerHTML"
+                        class="bg-slate-deep hover:bg-slate-mid text-white text-xs font-medium rounded-lg px-4 py-2 transition-colors">
+                  Save
+                </button>
+                <span id="grpstatus-{{ g.group_id }}" class="text-xs text-slate-400"></span>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- ------------------------ TAB: JOB PARAMETERS ------------------------ -->
+    <div data-panel="params">
+      <h2 class="text-lg font-semibold text-slate-deep mb-1">Job parameters</h2>
+      <p class="text-sm text-slate-500 mb-4">Applied across the estimate.</p>
+      <div id="job-params" class="flex flex-wrap items-end gap-5">
+        <label class="block">
+          <span class="block text-xs font-medium text-slate-500 mb-1">Profit markup (%)</span>
+          <input type="number" step="any" min="0" max="100" name="markup_pct"
+                 value="{{ project.markup_pct|numg }}" placeholder="e.g. 20"
+                 class="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+        </label>
+        <label class="block">
+          <span class="block text-xs font-medium text-slate-500 mb-1">Waste factor (%)</span>
+          <input type="number" step="any" min="0" max="100" name="waste_pct"
+                 value="{{ project.waste_pct|numg }}" placeholder="e.g. 10"
+                 class="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+        </label>
+      </div>
+      <div class="flex items-center gap-3 mt-4">
         <button type="button"
                 hx-post="/projects/{{ project.id }}/context"
                 hx-include="#job-params" hx-target="#jobparams-status" hx-swap="innerHTML"
-                class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors">
+                class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-5 py-2 transition-colors">
           Save
         </button>
         <span id="jobparams-status" class="text-xs text-slate-400"></span>
       </div>
     </div>
-  </div>
-</section>
 
-<!-- ====================== SECTION 1: DOCUMENTS ====================== -->
-<section class="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mb-8">
-  <div class="flex items-center gap-2 mb-1">
-    <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-deep text-white text-xs font-semibold">1</span>
-    <h2 class="text-lg font-semibold text-slate-deep">Project documents</h2>
-  </div>
-  <p class="text-sm text-slate-500 mb-4 ml-8">
-    Upload condition reports, schedules of works, specifications, drawings, photos and price documents.
-  </p>
-
-  <div class="ml-8">
-    {% with section = 'project' %}{% include "_doc_uploader.html" %}{% endwith %}
-  </div>
-</section>
-
-<!-- ====================== SECTION 2: ROOFING CONTEXT ====================== -->
-<section class="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
-  <div class="flex items-start justify-between gap-4 flex-wrap">
-    <div>
-      <div class="flex items-center gap-2 mb-1">
-        <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-deep text-white text-xs font-semibold">2</span>
-        <h2 class="text-lg font-semibold text-slate-deep">Roofing context</h2>
-      </div>
-      <p class="text-sm text-slate-500 ml-8 max-w-2xl">
-        Open an element below to answer the roofing-specific questions that supplement your
-        documents. Only fill what's relevant — leave the rest blank.
-      </p>
-    </div>
-    <div id="save-status" class="text-sm text-slate-500">
-      {% include "_save_status.html" %}
-    </div>
-  </div>
-
-  <!-- Qualifications (top of context) -->
-  <div class="mt-5 ml-8 border border-amber-200 bg-amber-50/40 rounded-lg p-4">
-    <h3 class="text-sm font-semibold text-slate-deep">Qualifications</h3>
-    <p class="text-xs text-slate-500 mb-3">
-      Any qualifications, assumptions or exclusions that qualify this job. Add as text and/or upload a document.
-    </p>
-
-    <form hx-post="/projects/{{ project.id }}/section-text"
-          hx-target="#qual-text-status" hx-swap="innerHTML"
-          class="mb-4">
-      <input type="hidden" name="section" value="qualifications" />
-      <textarea name="text" rows="3"
-                placeholder="e.g. Price excludes asbestos removal; assumes scaffold provided by main contractor…"
-                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none">{{ project.section_text.get('qualifications', '') }}</textarea>
-      <div class="flex items-center gap-3 mt-2">
-        <button type="submit"
-                class="bg-slate-deep hover:bg-slate-mid text-white text-xs font-medium rounded-lg px-4 py-2 transition-colors">
-          Save qualifications text
-        </button>
-        <span id="qual-text-status" class="text-xs text-slate-400"></span>
-      </div>
-    </form>
-
-    {% with section = 'qualifications' %}{% include "_doc_uploader.html" %}{% endwith %}
-  </div>
-
-  <form id="context-form"
-        hx-post="/projects/{{ project.id }}/context"
-        hx-target="#save-status" hx-swap="innerHTML"
-        hx-include="#job-params"
-        class="mt-5 ml-8">
-
-    <div class="space-y-3">
-      {% for g in groups %}
-      <details class="border border-slate-200 rounded-lg overflow-hidden">
-        <summary class="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50 hover:bg-slate-soft">
-          <span class="flex items-center gap-2">
-            <svg class="chev w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path d="M7 5l6 5-6 5V5z"/></svg>
-            <span class="font-semibold text-slate-deep">{{ g.group }}</span>
-          </span>
-          <span class="text-xs text-slate-400 num">{{ g.n_questions }} question{{ '' if g.n_questions == 1 else 's' }}</span>
-        </summary>
-
-        <div class="px-4 py-3 border-t border-slate-100 space-y-2">
-          {% for sub in g.subelements %}
-          <details class="border border-slate-100 rounded-md">
-            <summary class="flex items-center gap-2 px-3 py-2 hover:bg-slate-50">
-              <svg class="chev w-3.5 h-3.5 text-slate-300" viewBox="0 0 20 20" fill="currentColor"><path d="M7 5l6 5-6 5V5z"/></svg>
-              <span class="text-sm font-medium text-ink">{{ sub.name }}</span>
-              {% set ns = sub.questions|selectattr('qid','in',answers)|list|length %}
-              {% if ns > 0 %}
-                <span class="ml-auto text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">{{ ns }} answered</span>
-              {% endif %}
-            </summary>
-
-            <div class="px-4 py-3 border-t border-slate-100 space-y-5 bg-white">
-              {% for q in sub.questions %}
-              {% set val = answers.get(q.qid, '') %}
-              <div>
-                <label for="{{ q.qid }}" class="block text-sm text-ink font-medium">
-                  {{ q.question }}
-                  {% if q.unit %}<span class="text-slate-400 font-normal">({{ q.unit }})</span>{% endif %}
-                </label>
-
-                {% if q.field_kind == 'select' %}
-                  <select id="{{ q.qid }}" name="{{ q.qid }}"
-                          class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none">
-                    <option value="">— select —</option>
-                    {% for opt in q.options %}
-                      <option value="{{ opt }}" {% if val == opt %}selected{% endif %}>{{ opt }}</option>
-                    {% endfor %}
-                  </select>
-
-                {% elif q.field_kind == 'multiselect' %}
-                  <div class="mt-1 flex flex-wrap gap-x-5 gap-y-1">
-                    {% for opt in q.options %}
-                    <label class="inline-flex items-center gap-2 text-sm text-slate-600">
-                      <input type="checkbox" name="{{ q.qid }}" value="{{ opt }}"
-                             {% if val is iterable and val is not string and opt in val %}checked{% elif val == opt %}checked{% endif %}
-                             class="rounded border-slate-300 text-slate-deep focus:ring-slate-soft" />
-                      {{ opt }}
-                    </label>
-                    {% endfor %}
-                  </div>
-
-                {% elif q.field_kind == 'number' %}
-                  <input id="{{ q.qid }}" name="{{ q.qid }}" type="number" step="any"
-                         value="{{ val }}"
-                         placeholder="{% if q.default %}e.g. {{ q.default }}{% endif %}"
-                         class="mt-1 w-full sm:w-64 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
-
-                {% else %}
-                  <textarea id="{{ q.qid }}" name="{{ q.qid }}" rows="2"
-                            placeholder="{% if q.default %}Default: {{ q.default }}{% endif %}"
-                            class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none">{{ val }}</textarea>
-                {% endif %}
-
-                <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
-                  <span class="font-mono text-slate-300">{{ q.qid }}</span>
-                  · {{ q.informs }}
-                  {% if q.feeds_step %} · <span class="text-slate-400">feeds {{ q.feeds_step }}</span>{% endif %}
-                  {% if q.source_doc %} · <span class="italic">{{ q.source_doc }}</span>{% endif %}
-                </p>
-              </div>
-              {% endfor %}
-            </div>
-          </details>
-          {% endfor %}
-
-          <div class="flex items-center gap-3 pt-1">
-            <button type="button"
-                    hx-post="/projects/{{ project.id }}/context"
-                    hx-include="#job-params" hx-target="#grpstatus-{{ g.group_id }}" hx-swap="innerHTML"
-                    class="bg-slate-deep hover:bg-slate-mid text-white text-xs font-medium rounded-lg px-4 py-2 transition-colors">
-              Save
-            </button>
-            <span id="grpstatus-{{ g.group_id }}" class="text-xs text-slate-400"></span>
-          </div>
+    <!-- ------------------------ TAB: ESTIMATE ------------------------ -->
+    <div data-panel="estimate">
+      <div class="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 class="text-lg font-semibold text-slate-deep mb-1">Estimate</h2>
+          <p class="text-sm text-slate-500 max-w-xl">
+            <strong class="font-medium text-slate-deep">Save</strong> writes everything you've entered to the project's
+            storage folder so you can return later.
+            <strong class="font-medium text-slate-deep">Estimate</strong> compiles the full project context, runs the
+            workflow, and produces a pricing sheet and tender document to download.
+          </p>
         </div>
-      </details>
-      {% endfor %}
+        <div id="save-status" class="text-sm text-slate-500">
+          {% include "_save_status.html" %}
+        </div>
+      </div>
+
+      <div class="mt-6 flex items-center justify-between gap-3 flex-wrap border-t border-slate-100 pt-5">
+        <div class="flex items-center gap-3">
+          <button type="button"
+                  hx-post="/projects/{{ project.id }}/context"
+                  hx-include=".ctx-field, #job-params" hx-target="#save-status" hx-swap="innerHTML"
+                  class="border border-slate-300 hover:border-slate-mid text-slate-deep text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
+            Save
+          </button>
+          <span class="text-xs text-slate-400">Saves everything you've entered to the project folder.</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="htmx-indicator text-xs text-slate-400">Working…</span>
+          <button type="button"
+                  hx-post="/projects/{{ project.id }}/tender"
+                  hx-include=".ctx-field, #job-params" hx-target="#tender-result" hx-swap="innerHTML"
+                  class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg px-6 py-2.5 shadow-sm transition-colors">
+            Estimate
+          </button>
+        </div>
+      </div>
+      <div id="tender-result" class="mt-4"></div>
     </div>
 
-    <div class="sticky bottom-0 mt-6 -mx-8 px-8 py-4 bg-white/90 backdrop-blur border-t border-slate-200 flex items-center justify-between gap-3 flex-wrap">
-      <div class="flex items-center gap-3">
-        <button type="submit"
-                class="border border-slate-300 hover:border-slate-mid text-slate-deep text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
-          Save
-        </button>
-        <span class="text-xs text-slate-400">Saves everything you've entered to the project folder.</span>
-      </div>
-      <div class="flex items-center gap-3">
-        <span class="htmx-indicator text-xs text-slate-400">Working…</span>
-        <button type="button"
-                hx-post="/projects/{{ project.id }}/tender"
-                hx-target="#tender-result" hx-swap="innerHTML"
-                class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg px-6 py-2.5 shadow-sm transition-colors">
-          Estimate
-        </button>
-      </div>
-    </div>
-    <div id="tender-result" class="mt-4"></div>
-  </form>
-
-  <!-- Terms & conditions (bottom of context) -->
-  <div class="mt-8 ml-8 grid grid-cols-1 md:grid-cols-2 gap-5">
-    <div class="border border-slate-200 rounded-lg p-4">
-      <h3 class="text-sm font-semibold text-slate-deep">Job terms &amp; conditions</h3>
-      <p class="text-xs text-slate-500 mb-3">Upload the terms and conditions that apply to this job.</p>
-      {% with section = 'job_terms' %}{% include "_doc_uploader.html" %}{% endwith %}
-      <div class="flex items-center gap-3 mt-3">
-        <button type="button"
-                hx-post="/projects/{{ project.id }}/context"
-                hx-target="#jobterms-status" hx-swap="innerHTML"
-                class="bg-slate-deep hover:bg-slate-mid text-white text-xs font-medium rounded-lg px-4 py-2 transition-colors">
-          Save
-        </button>
-        <span id="jobterms-status" class="text-xs text-slate-400"></span>
-      </div>
-    </div>
-    <div class="border border-slate-200 rounded-lg p-4">
-      <h3 class="text-sm font-semibold text-slate-deep">Client terms &amp; conditions</h3>
-      <p class="text-xs text-slate-500 mb-3">Upload the client's terms and conditions for this job.</p>
-      {% with section = 'client_terms' %}{% include "_doc_uploader.html" %}{% endwith %}
-      <div class="flex items-center gap-3 mt-3">
-        <button type="button"
-                hx-post="/projects/{{ project.id }}/context"
-                hx-target="#clientterms-status" hx-swap="innerHTML"
-                class="bg-slate-deep hover:bg-slate-mid text-white text-xs font-medium rounded-lg px-4 py-2 transition-colors">
-          Save
-        </button>
-        <span id="clientterms-status" class="text-xs text-slate-400"></span>
-      </div>
-    </div>
   </div>
-</section>
+</div>
+
+<script>
+  (function () {
+    function initTabs(group) {
+      var nav = group.querySelector(':scope > .tabnav');
+      var wrap = group.querySelector(':scope > .tabpanels');
+      if (!nav || !wrap) return;
+      var btns = Array.prototype.filter.call(nav.querySelectorAll('[data-tab]'),
+        function (b) { return b.closest('.tabnav') === nav; });
+      var panels = Array.prototype.filter.call(wrap.children,
+        function (p) { return p.hasAttribute('data-panel'); });
+      function show(name) {
+        panels.forEach(function (p) { p.style.display = (p.getAttribute('data-panel') === name ? '' : 'none'); });
+        btns.forEach(function (b) { b.classList.toggle('is-active', b.getAttribute('data-tab') === name); });
+      }
+      btns.forEach(function (b) {
+        b.addEventListener('click', function (e) { e.preventDefault(); show(b.getAttribute('data-tab')); });
+      });
+      if (btns[0]) show(btns[0].getAttribute('data-tab'));
+    }
+    document.querySelectorAll('[data-tabs]').forEach(initTabs);
+  })();
+</script>
 
 {% endblock %}
