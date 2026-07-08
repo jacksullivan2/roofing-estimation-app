@@ -139,16 +139,24 @@ class S3Repo:
 
     def list_records(self) -> list[dict]:
         out: list[dict] = []
-        paginator = self._client.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=self.bucket, Prefix=self.prefix):
-            for obj in page.get("Contents", []):
-                if obj["Key"].endswith("/project.json"):
-                    try:
-                        body = self._client.get_object(
-                            Bucket=self.bucket, Key=obj["Key"])["Body"].read()
-                        out.append(json.loads(body.decode("utf-8")))
-                    except Exception as exc:  # noqa: BLE001
-                        LOGGER.warning("S3 read %s failed: %s", obj["Key"], exc)
+        try:
+            paginator = self._client.get_paginator("list_objects_v2")
+            pages = paginator.paginate(Bucket=self.bucket, Prefix=self.prefix)
+            for page in pages:
+                for obj in page.get("Contents", []):
+                    if obj["Key"].endswith("/project.json"):
+                        try:
+                            body = self._client.get_object(
+                                Bucket=self.bucket, Key=obj["Key"])["Body"].read()
+                            out.append(json.loads(body.decode("utf-8")))
+                        except Exception as exc:  # noqa: BLE001
+                            LOGGER.warning("S3 read %s failed: %s", obj["Key"], exc)
+        except Exception as exc:  # noqa: BLE001
+            # Bucket unreachable / wrong creds / wrong region / missing bucket.
+            # Degrade gracefully so the page still renders instead of 500-ing.
+            LOGGER.warning(
+                "S3 list_records failed for bucket %s (%s); returning what we have.",
+                self.bucket, exc)
         return out
 
     # documents ------------------------------------------------------------ #
@@ -170,14 +178,17 @@ class S3Repo:
             LOGGER.warning("S3 delete_document failed: %s", exc)
 
     def delete_project(self, pid: str) -> None:
-        paginator = self._client.get_paginator("list_objects_v2")
-        keys: list[dict] = []
-        for page in paginator.paginate(Bucket=self.bucket, Prefix=self._folder(pid)):
-            for obj in page.get("Contents", []):
-                keys.append({"Key": obj["Key"]})
-        for i in range(0, len(keys), 1000):
-            self._client.delete_objects(
-                Bucket=self.bucket, Delete={"Objects": keys[i:i + 1000]})
+        try:
+            paginator = self._client.get_paginator("list_objects_v2")
+            keys: list[dict] = []
+            for page in paginator.paginate(Bucket=self.bucket, Prefix=self._folder(pid)):
+                for obj in page.get("Contents", []):
+                    keys.append({"Key": obj["Key"]})
+            for i in range(0, len(keys), 1000):
+                self._client.delete_objects(
+                    Bucket=self.bucket, Delete={"Objects": keys[i:i + 1000]})
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("S3 delete_project(%s) failed: %s", pid, exc)
 
 
 # --------------------------------------------------------------------------- #
