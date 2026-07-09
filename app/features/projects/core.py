@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import re
 import time
-import uuid
 from pathlib import Path
 
 from app import question_map, settings
@@ -122,10 +121,20 @@ def section_text(rec: dict, section: str) -> str:
 
 
 def create_project(name: str, client: str = "", reference: str = "") -> dict:
-    pid = uuid.uuid4().hex[:12]
+    display = (name or "Untitled project").strip()
+    # The project id IS the folder name, so a project called "5 Ebury Street"
+    # gets a "5 Ebury Street/" folder in the bucket. Make it unique by suffixing
+    # if a project with that folder already exists.
+    repo = _repo.get_repo()
+    base = _safe_filename(display)
+    pid = base
+    n = 2
+    while repo.read_record(pid) is not None:
+        pid = f"{base} ({n})"
+        n += 1
     rec = {
         "id": pid,
-        "name": (name or "Untitled project").strip(),
+        "name": display,
         "client": (client or "").strip(),
         "reference": (reference or "").strip(),
         "created_at": _now(),
@@ -137,8 +146,8 @@ def create_project(name: str, client: str = "", reference: str = "") -> dict:
         "waste_pct": None,
     }
     # Writing the record creates the project's folder in the store (in S3 this
-    # establishes the <prefix><id>/ prefix).
-    _repo.get_repo().write_record(rec)
+    # establishes the "<project name>/" key prefix).
+    repo.write_record(rec)
     return rec
 
 

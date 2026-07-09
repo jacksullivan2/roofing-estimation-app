@@ -21,9 +21,10 @@
 
   <div class="px-6 pb-6 border-t border-slate-100 pt-4">
     <p class="text-sm text-slate-500 mb-4">
-      Connect an AWS S3 bucket to store every project in its own folder
-      (<code class="text-xs bg-slate-100 px-1 rounded">{{ s3.prefix or 'projects/' }}&lt;project&gt;/</code>).
-      Projects, documents and saved context read and write there. Leave
+      Connect an AWS S3 bucket. Each project you create gets its own folder in
+      the bucket, named after the project
+      (<code class="text-xs bg-slate-100 px-1 rounded">&lt;project name&gt;/</code>),
+      and all its documents and saved context read and write there. Leave
       disconnected to keep data on this machine.
     </p>
 
@@ -53,12 +54,6 @@
         <input name="region" value="{{ s3.region }}" placeholder="eu-west-2"
                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
       </label>
-      <label class="block">
-        <span class="block text-xs font-medium text-slate-500 mb-1">Key prefix (folder)</span>
-        <input name="prefix" value="{{ s3.prefix }}" placeholder="projects/"
-               class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
-      </label>
-      <div></div>
       <label class="block">
         <span class="block text-xs font-medium text-slate-500 mb-1">Access key ID</span>
         <input name="access_key_id" value="{{ s3.access_key_id }}" autocomplete="off"

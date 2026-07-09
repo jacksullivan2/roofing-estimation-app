@@ -25,7 +25,6 @@ _DEFAULT = {
     "enabled": False,
     "bucket": "",
     "region": "",
-    "prefix": "projects/",     # all project folders live under this key prefix
     "access_key_id": "",
     "secret_access_key": "",
 }
@@ -39,17 +38,13 @@ def get() -> dict:
     return cfg
 
 
-def save(*, bucket: str, region: str = "", prefix: str = "projects/",
+def save(*, bucket: str, region: str = "",
          access_key_id: str = "", secret_access_key: str = "",
          enabled: bool = True) -> dict:
-    prefix = (prefix or "").strip()
-    if prefix and not prefix.endswith("/"):
-        prefix += "/"
     cfg = {
         "enabled": bool(enabled),
         "bucket": (bucket or "").strip(),
         "region": (region or "").strip(),
-        "prefix": prefix,
         "access_key_id": (access_key_id or "").strip(),
         "secret_access_key": (secret_access_key or "").strip(),
     }

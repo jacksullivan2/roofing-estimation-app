@@ -134,18 +134,21 @@ with two backends, chosen automatically:
 - **Local disk** (default) when no bucket is connected — data lives under
   `DATA_DIR`.
 
-Connect S3 from the homepage: enter bucket, region, optional key prefix, and
-either access keys or leave them blank to use the instance role / default AWS
-credential chain. **Test connection** verifies the bucket; **Disconnect**
-reverts to local. The connection (incl. keys) is stored in
-`DATA_DIR/s3_config.json` on the app's own volume.
+Connect S3 from the homepage: enter bucket, region, and either access keys or
+leave them blank to use the instance role / default AWS credential chain.
+**Test connection** verifies the bucket; **Disconnect** reverts to local. The
+connection (incl. keys) is stored in `DATA_DIR/s3_config.json` on the app's own
+volume.
 
-S3 key layout per project:
+Each project's folder is named after the project, so a project called
+"5 Ebury Street" produces this key layout in the connected bucket:
 
 ```
-<prefix><project-id>/project.json                 # the record (metadata, params, answers, section text, document index)
-<prefix><project-id>/documents/<filename>         # every uploaded / generated document
+5 Ebury Street/project.json                 # the record (metadata, params, answers, section text, document index)
+5 Ebury Street/documents/<filename>         # every uploaded / generated document
 ```
+
+(Names are sanitised for S3 keys; a duplicate name is suffixed, e.g. "5 Ebury Street (2)".)
 
 Local layout under `DATA_DIR` (default `/home/data`, a Docker volume):
 

@@ -86,7 +86,6 @@ def _storage_ctx(status: str | None = None, ok: bool | None = None) -> dict:
             "enabled": cfg.get("enabled"),
             "bucket": cfg.get("bucket", ""),
             "region": cfg.get("region", ""),
-            "prefix": cfg.get("prefix", ""),
             "access_key_id": cfg.get("access_key_id", ""),
             "has_secret": bool(cfg.get("secret_access_key")),
             "boto3": s3_config.boto3_available(),
@@ -117,7 +116,6 @@ def list_page(request: Request, sid: str = Depends(auth.require_login),
 @router.post("/storage")
 def save_storage(request: Request, sid: str = Depends(auth.require_login),
                  bucket: str = Form(""), region: str = Form(""),
-                 prefix: str = Form("projects/"),
                  access_key_id: str = Form(""),
                  secret_access_key: str = Form(""),
                  enabled: str = Form("on")):
@@ -125,7 +123,7 @@ def save_storage(request: Request, sid: str = Depends(auth.require_login),
         return RedirectResponse(
             "/projects?s3ok=0&s3msg=" + _qs("Enter a bucket name."), status_code=303)
     cfg = s3_config.save(
-        bucket=bucket, region=region, prefix=prefix,
+        bucket=bucket, region=region,
         access_key_id=access_key_id, secret_access_key=secret_access_key,
         enabled=bool(enabled),
     )

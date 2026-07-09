@@ -9,9 +9,10 @@ backend when the user has configured + enabled an S3 connection on the
 homepage, otherwise the local-disk backend (so the app works out of the box
 and in dev without AWS).
 
-S3 key layout (per project ``pid``):
-    <prefix><pid>/project.json
-    <prefix><pid>/documents/<filename>
+The project id is the (sanitised, unique) project name, so the S3 folder is
+named after the project. S3 key layout for a project id like "5 Ebury Street":
+    5 Ebury Street/project.json
+    5 Ebury Street/documents/<filename>
 Creating a project writes ``project.json``, which is what "creates the folder"
 in S3 (S3 has no real directories — a key prefix is the folder).
 """
@@ -105,12 +106,12 @@ class S3Repo:
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.bucket = cfg["bucket"]
-        self.prefix = cfg.get("prefix", "") or ""
         self._client = s3_config.client(cfg)
 
     # key helpers ---------------------------------------------------------- #
     def _folder(self, pid: str) -> str:
-        return f"{self.prefix}{pid}/"
+        # The project id is the folder name, e.g. "5 Ebury Street/".
+        return f"{pid}/"
 
     def _record_key(self, pid: str) -> str:
         return f"{self._folder(pid)}project.json"
@@ -141,7 +142,7 @@ class S3Repo:
         out: list[dict] = []
         try:
             paginator = self._client.get_paginator("list_objects_v2")
-            pages = paginator.paginate(Bucket=self.bucket, Prefix=self.prefix)
+            pages = paginator.paginate(Bucket=self.bucket)
             for page in pages:
                 for obj in page.get("Contents", []):
                     if obj["Key"].endswith("/project.json"):
