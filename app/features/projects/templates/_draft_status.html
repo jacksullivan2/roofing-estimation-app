@@ -1,0 +1,25 @@
+{# Draft-generation status. Polls until the job is done, then the route swaps
+   in the item-review fragment. Expects: project, job. #}
+<div id="draft-panel"
+     {% if job.status in ('queued', 'running') %}
+       hx-get="/projects/{{ project.id }}/draft/status/{{ job.job_id }}"
+       hx-trigger="load delay:1.5s" hx-swap="outerHTML"
+     {% endif %}
+     class="border rounded-lg p-4
+            {% if job.status == 'error' %}border-red-200 bg-red-50{% else %}border-slate-200 bg-slate-50{% endif %}">
+  {% if job.status == 'error' %}
+    <p class="text-sm font-medium text-red-800">Draft generation failed</p>
+    <p class="text-xs text-red-700 mt-1">{{ job.error }}</p>
+  {% else %}
+    <div class="flex items-center gap-3">
+      <svg class="animate-spin h-4 w-4 text-slate-mid" viewBox="0 0 24 24" fill="none">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+      </svg>
+      <div>
+        <p class="text-sm font-medium text-slate-deep">Generating draft pricing…</p>
+        <p class="text-xs text-slate-500">{{ job.step or 'Starting…' }}</p>
+      </div>
+    </div>
+  {% endif %}
+</div>

@@ -56,6 +56,7 @@ class TenderJob:
     """
     job_id: str
     project_id: str
+    kind: str = "final"             # "draft" (line items) | "final" (pricing + tender)
 
     status: str = "queued"          # queued | running | done | error
     step: str = ""                  # human-readable current step
@@ -83,8 +84,8 @@ _tender_jobs: dict[str, TenderJob] = {}
 _tender_jobs_lock = threading.Lock()
 
 
-def create_tender_job(project_id: str) -> TenderJob:
-    job = TenderJob(job_id=uuid.uuid4().hex[:12], project_id=project_id)
+def create_tender_job(project_id: str, kind: str = "final") -> TenderJob:
+    job = TenderJob(job_id=uuid.uuid4().hex[:12], project_id=project_id, kind=kind)
     with _tender_jobs_lock:
         _tender_jobs[job.job_id] = job
     return job

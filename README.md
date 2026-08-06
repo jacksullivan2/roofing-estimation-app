@@ -13,7 +13,24 @@ persistence, and a single-image Docker container on uvicorn `:8000`.
 
 ## What it does
 
-The project page is organised into four tabs, so you never scroll a long page:
+The project page is a three-step flow:
+
+**Step 1 — Upload & context.** Upload project documents and both T&C sets, set
+the job parameters (markup/waste %), and optionally add context: a checklist
+lists Qualifications plus every Question Map topic — ticking one opens that
+section's questions inline. Sections already holding data come pre-ticked.
+
+**Step 2 — Draft pricing review.** Generate the draft pricing sheet; its line
+items are returned to the UI one at a time. For each item add qualifying
+information and submit (or skip = no qualifications), and the next item
+appears. You can re-walk the items at any time.
+
+**Step 3 — Final documents.** Resubmit the pricing sheet with the item
+qualifications — the full workflow runs (context doc → S3 prompts → AI model)
+and returns the final pricing sheet (with a Qualifications column) and the
+tender document (with an "Item qualifications" section) for download.
+
+The previous four-tab reference (below) is superseded by this flow:
 
 **Project Files** — upload condition reports, schedules of works,
 specifications, drawings, photos and price documents; plus a **Terms &

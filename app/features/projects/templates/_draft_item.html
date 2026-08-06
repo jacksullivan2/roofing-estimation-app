@@ -1,0 +1,71 @@
+{# One draft pricing item awaiting qualification — or the completion panel.
+   Expects: project, draft, item (None when complete), n_items, n_qualified. #}
+<div id="draft-panel" class="border border-slate-200 rounded-lg p-5 bg-white">
+
+  {% if item %}
+  <div class="flex items-center justify-between gap-3 mb-3">
+    <p class="text-xs font-medium text-slate-400 uppercase tracking-wide">
+      Draft item {{ item.idx + 1 }} of {{ n_items }}
+    </p>
+    <div class="h-1.5 w-40 bg-slate-100 rounded-full overflow-hidden">
+      <div class="h-full bg-slate-mid" style="width: {{ ((item.idx) * 100 / n_items)|round }}%"></div>
+    </div>
+  </div>
+
+  <div class="border border-slate-100 rounded-lg p-4 bg-slate-50 mb-4">
+    <p class="text-xs text-slate-400">{{ item.group }}</p>
+    <p class="text-sm font-semibold text-slate-deep mt-0.5">{{ item.item }}</p>
+    {% if item.detail %}<p class="text-xs text-slate-500 mt-1">{{ item.detail }}</p>{% endif %}
+    {% if item.qty or item.unit %}
+    <p class="text-xs text-slate-500 mt-2">
+      Quantity: <span class="num font-medium text-ink">{{ item.qty or '—' }}</span>
+      {% if item.unit %}<span class="text-slate-400">{{ item.unit }}</span>{% endif %}
+    </p>
+    {% endif %}
+  </div>
+
+  <form hx-post="/projects/{{ project.id }}/draft/qualify"
+        hx-target="#draft-panel" hx-swap="outerHTML">
+    <label class="block text-sm font-medium text-ink mb-1">Qualifications for this item</label>
+    <textarea name="qualification" rows="3" autofocus
+              placeholder="e.g. Rate assumes access from existing scaffold; excludes replacement of rotten deck boards…"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none"></textarea>
+    <div class="flex items-center gap-3 mt-3">
+      <button type="submit" name="action" value="submit"
+              class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-5 py-2 transition-colors">
+        Submit &amp; next
+      </button>
+      <button type="submit" name="action" value="skip"
+              class="border border-slate-300 hover:border-slate-mid text-slate-deep text-sm rounded-lg px-4 py-2 transition-colors">
+        Skip
+      </button>
+      <span class="text-xs text-slate-400">Skip = no qualifications for this item.</span>
+    </div>
+  </form>
+
+  {% else %}
+  <div class="text-center py-2">
+    <p class="text-sm font-semibold text-emerald-800">Draft review complete</p>
+    <p class="text-xs text-slate-500 mt-1">
+      {{ n_items }} item{{ '' if n_items == 1 else 's' }} reviewed ·
+      {{ n_qualified }} with qualifications.
+    </p>
+    <div class="flex items-center justify-center gap-3 mt-4 flex-wrap">
+      <button type="button"
+              hx-post="/projects/{{ project.id }}/draft/review-again"
+              hx-target="#draft-panel" hx-swap="outerHTML"
+              class="border border-slate-300 hover:border-slate-mid text-slate-deep text-sm rounded-lg px-4 py-2 transition-colors">
+        Review items again
+      </button>
+      <button type="button"
+              hx-post="/projects/{{ project.id }}/tender"
+              hx-include=".ctx-field, #job-params"
+              hx-target="#tender-result" hx-swap="innerHTML"
+              onclick="var t=document.getElementById('tab-final'); if(t) t.click();"
+              class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg px-6 py-2 shadow-sm transition-colors">
+        Generate final pricing &amp; tender
+      </button>
+    </div>
+  </div>
+  {% endif %}
+</div>

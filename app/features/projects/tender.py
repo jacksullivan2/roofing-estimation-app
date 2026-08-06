@@ -55,10 +55,27 @@ def _run(job_id: str) -> None:
         job.prompts_count = len(prompts)
         job.prompt_source = prompts[0]["source"] if prompts else "none"
 
-        # Step 3 — call the AI model with prompts + project documents.
-        job.step = "Generating pricing sheet and tender document"
         export = core.context_export(rec)
         documents = core.project_document_payloads(rec)
+
+        if job.kind == "draft":
+            # Step 3a — draft pass: derive the pricing line items only. The
+            # UI then walks them one by one collecting qualifications.
+            job.step = "Deriving draft pricing items"
+            draft = ai_client.generate_draft_items(
+                export=export, context_markdown=context_markdown,
+                prompts=prompts, documents=documents,
+            )
+            core.set_draft_items(job.project_id, draft.get("items", []))
+            job.ai_used = bool(draft.get("ai_used"))
+            job.notes = draft.get("notes", "")
+            job.step = "Done"
+            job.status = "done"
+            return
+
+        # Step 3b — final pass: qualifications gathered during the item
+        # review are inside export["draft_items"].
+        job.step = "Generating pricing sheet and tender document"
         result = ai_client.generate_tender(
             export=export,
             context_markdown=context_markdown,

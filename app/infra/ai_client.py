@@ -43,6 +43,51 @@ def _safe(name: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# Draft pricing items (step 1 of the two-pass flow)                            #
+# --------------------------------------------------------------------------- #
+
+def generate_draft_items(export: dict, context_markdown: str,
+                         prompts: list[dict], documents: list[dict]) -> dict:
+    """Produce the DRAFT pricing line items the estimator reviews one by one.
+
+    With a configured model this should ask the model to derive line items
+    from the documents + context; until then we derive placeholder items
+    deterministically from the answered context so the review loop works.
+    Returns {"ai_used": bool, "items": [{group,item,detail,qty,unit}...]}.
+    """
+    if settings.ai_configured():
+        # TODO: call the model (same providers as _invoke_remote) with a
+        # "derive line items" instruction and parse its JSON response.
+        # Fall through to the deterministic derivation until implemented.
+        pass
+
+    items: list[dict] = []
+    for c in export.get("context", []):
+        ans = c.get("answer")
+        if isinstance(ans, (list, tuple)):
+            ans = ", ".join(str(x) for x in ans)
+        items.append({
+            "group": c.get("group", ""),
+            "item": c.get("subelement", "") or c.get("question", ""),
+            "detail": c.get("question", ""),
+            "qty": str(ans),
+            "unit": c.get("unit", ""),
+        })
+    if not items:
+        # No context answered — seed a minimal generic take-off so the
+        # review loop still functions.
+        items = [
+            {"group": "General", "item": "Main roof waterproofing",
+             "detail": "Field area waterproofing system", "qty": "", "unit": "m²"},
+            {"group": "General", "item": "Perimeter details",
+             "detail": "Upstands, edge trims and terminations", "qty": "", "unit": "lm"},
+            {"group": "General", "item": "Preliminaries & access",
+             "detail": "Scaffold/access, welfare, supervision", "qty": "", "unit": "item"},
+        ]
+    return {"ai_used": False, "items": items}
+
+
+# --------------------------------------------------------------------------- #
 # Placeholder artefacts (used until a real model is wired up)                  #
 # --------------------------------------------------------------------------- #
 
@@ -74,9 +119,9 @@ def _placeholder_pricing(export: dict) -> bytes:
     for r in range(4, 8):
         ws[f"A{r}"].font = Font(bold=True)
 
-    headers = ["Element Group", "Element", "Item / Question", "Context answer",
-               "Qty", "Unit", "Unit rate (£)", "Material (£)", "Labour (£)",
-               "Line total (£)"]
+    headers = ["Element Group", "Item", "Detail", "Qty", "Unit",
+               "Unit rate (£)", "Material (£)", "Labour (£)", "Line total (£)",
+               "Qualifications"]
     hr = 9
     for i, h in enumerate(headers, start=1):
         c = ws.cell(hr, i, h)
@@ -84,21 +129,33 @@ def _placeholder_pricing(export: dict) -> bytes:
         c.fill = headfill
         c.alignment = Alignment(horizontal="center", wrap_text=True)
 
+    draft_items = export.get("draft_items") or []
     r = hr + 1
-    for item in export.get("context", []):
-        ans = item.get("answer")
-        if isinstance(ans, (list, tuple)):
-            ans = ", ".join(str(x) for x in ans)
-        ws.cell(r, 1, item.get("group", ""))
-        ws.cell(r, 2, item.get("subelement", ""))
-        ws.cell(r, 3, item.get("question", ""))
-        ws.cell(r, 4, str(ans))
-        ws.cell(r, 6, item.get("unit", ""))
-        r += 1
-    if r == hr + 1:
-        ws.cell(r, 1, "(No context answers captured yet.)")
+    if draft_items:
+        for it in draft_items:
+            ws.cell(r, 1, it.get("group", ""))
+            ws.cell(r, 2, it.get("item", ""))
+            ws.cell(r, 3, it.get("detail", ""))
+            ws.cell(r, 4, it.get("qty", ""))
+            ws.cell(r, 5, it.get("unit", ""))
+            q = it.get("qualification", "")
+            ws.cell(r, 10, q if q else ("(skipped)" if it.get("skipped") else ""))
+            r += 1
+    else:
+        for item in export.get("context", []):
+            ans = item.get("answer")
+            if isinstance(ans, (list, tuple)):
+                ans = ", ".join(str(x) for x in ans)
+            ws.cell(r, 1, item.get("group", ""))
+            ws.cell(r, 2, item.get("subelement", ""))
+            ws.cell(r, 3, item.get("question", ""))
+            ws.cell(r, 4, str(ans))
+            ws.cell(r, 5, item.get("unit", ""))
+            r += 1
+        if r == hr + 1:
+            ws.cell(r, 1, "(No context answers captured yet.)")
 
-    widths = [22, 22, 44, 28, 8, 8, 12, 12, 12, 13]
+    widths = [22, 26, 40, 12, 8, 12, 12, 12, 13, 40]
     from openpyxl.utils import get_column_letter
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
@@ -127,10 +184,27 @@ project context and the workflow steps below.*
 ## Workflow steps that will be executed
 {steps}
 
+## Item qualifications
+{_quals_section(export)}
+
 ## Compiled project context
 {context_markdown}
 """
     return body.encode("utf-8")
+
+
+def _quals_section(export: dict) -> str:
+    items = export.get("draft_items") or []
+    quals = [it for it in items if it.get("qualification")]
+    if not items:
+        return "_Draft pricing has not been reviewed item by item._"
+    if not quals:
+        return "_No qualifications were added during the item review._"
+    lines = []
+    for it in quals:
+        lines.append(f"- **{it.get('item','')}** ({it.get('group','')}): "
+                     f"{it['qualification']}")
+    return "\n".join(lines)
 
 
 def _placeholder_result(export: dict, context_markdown: str,

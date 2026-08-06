@@ -8,10 +8,8 @@
              border-bottom: 2px solid transparent; cursor: pointer; background: none; white-space: nowrap; }
   .tab-btn:hover { color: #1F3864; }
   .tab-btn.is-active { color: #1F3864; border-bottom-color: #1F3864; }
-  .subtab-btn { display: block; width: 100%; text-align: left; padding: .45rem .7rem; font-size: .8125rem;
-                border-radius: .5rem; color: #475569; cursor: pointer; background: none; border: none; }
-  .subtab-btn:hover { background: #F1F5F9; }
-  .subtab-btn.is-active { background: #EEF3FB; color: #1F3864; font-weight: 600; }
+  .ctx-section { display: none; }
+  .ctx-section.is-open { display: block; }
 </style>
 
 <div class="mb-6">
@@ -38,19 +36,18 @@
   </div>
 </div>
 
-<!-- ============================ TOP-LEVEL TABS ============================ -->
 <div data-tabs class="bg-white border border-slate-200 rounded-xl shadow-sm">
   <div class="tabnav flex items-center gap-1 px-4 border-b border-slate-200 overflow-x-auto">
-    <button type="button" class="tab-btn" data-tab="files">Project Files</button>
-    <button type="button" class="tab-btn" data-tab="context">Project Context</button>
-    <button type="button" class="tab-btn" data-tab="params">Job Parameters</button>
-    <button type="button" class="tab-btn" data-tab="estimate">Estimate</button>
+    <button type="button" class="tab-btn" data-tab="step1">1 · Upload &amp; context</button>
+    <button type="button" class="tab-btn" data-tab="step2">2 · Draft pricing review</button>
+    <button type="button" class="tab-btn" data-tab="step3" id="tab-final">3 · Final documents</button>
   </div>
 
   <div class="tabpanels p-6">
 
-    <!-- ------------------------ TAB: PROJECT FILES ------------------------ -->
-    <div data-panel="files" class="space-y-8">
+    <!-- ==================== STEP 1: UPLOAD & OPTIONAL CONTEXT ==================== -->
+    <div data-panel="step1" class="space-y-8">
+
       <section>
         <h2 class="text-lg font-semibold text-slate-deep mb-1">Project documents</h2>
         <p class="text-sm text-slate-500 mb-4">
@@ -61,8 +58,7 @@
 
       <section class="border-t border-slate-100 pt-6">
         <h2 class="text-lg font-semibold text-slate-deep mb-1">Terms &amp; conditions</h2>
-        <p class="text-sm text-slate-500 mb-4">Upload the terms and conditions for this job.</p>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mt-3">
           <div class="border border-slate-200 rounded-lg p-4">
             <h3 class="text-sm font-semibold text-slate-deep mb-2">Job terms &amp; conditions</h3>
             {% with section = 'job_terms' %}{% include "_doc_uploader.html" %}{% endwith %}
@@ -73,176 +69,146 @@
           </div>
         </div>
       </section>
-    </div>
 
-    <!-- ------------------------ TAB: PROJECT CONTEXT ------------------------ -->
-    <div data-panel="context">
-      <p class="text-sm text-slate-500 mb-4">
-        Pick a section on the left and answer the questions that supplement your documents. Only fill what's relevant.
-      </p>
+      <section class="border-t border-slate-100 pt-6">
+        <h2 class="text-lg font-semibold text-slate-deep mb-1">Job parameters</h2>
+        <div id="job-params" class="flex flex-wrap items-end gap-5 mt-2">
+          <label class="block">
+            <span class="block text-xs font-medium text-slate-500 mb-1">Profit markup (%)</span>
+            <input type="number" step="any" min="0" max="100" name="markup_pct"
+                   value="{{ project.markup_pct|numg }}" placeholder="e.g. 20"
+                   class="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+          </label>
+          <label class="block">
+            <span class="block text-xs font-medium text-slate-500 mb-1">Waste factor (%)</span>
+            <input type="number" step="any" min="0" max="100" name="waste_pct"
+                   value="{{ project.waste_pct|numg }}" placeholder="e.g. 10"
+                   class="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+          </label>
+          <div class="flex items-center gap-3">
+            <button type="button"
+                    hx-post="/projects/{{ project.id }}/context"
+                    hx-include="#job-params" hx-target="#jobparams-status" hx-swap="innerHTML"
+                    class="bg-slate-deep hover:bg-slate-mid text-white text-xs font-medium rounded-lg px-4 py-2 transition-colors">
+              Save
+            </button>
+            <span id="jobparams-status" class="text-xs text-slate-400"></span>
+          </div>
+        </div>
+      </section>
 
-      <div data-tabs class="flex flex-col md:flex-row gap-6">
-        <!-- sub-tab nav (vertical) -->
-        <div class="tabnav md:w-64 shrink-0 md:border-r md:border-slate-100 md:pr-3 space-y-0.5 max-h-[70vh] overflow-y-auto">
-          <button type="button" class="subtab-btn" data-tab="sub-qual">Qualifications</button>
+      <!-- Optional additional context: checklist opens sections -->
+      <section class="border-t border-slate-100 pt-6">
+        <h2 class="text-lg font-semibold text-slate-deep mb-1">Additional project context <span class="text-sm font-normal text-slate-400">(optional)</span></h2>
+        <p class="text-sm text-slate-500 mb-4">
+          Tick a topic to open its questions. Anything you add sharpens the estimate; untouched topics are simply left out.
+        </p>
+
+        <div class="flex flex-wrap gap-x-5 gap-y-2 mb-6 border border-slate-200 rounded-lg p-4 bg-slate-50">
+          <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" class="ctx-toggle rounded border-slate-300 text-slate-deep focus:ring-slate-soft"
+                   data-target="ctx-sec-qual" {% if qual_active %}checked{% endif %} />
+            Qualifications
+          </label>
           {% for g in groups %}
-          <button type="button" class="subtab-btn" data-tab="sub-{{ g.group_id }}">{{ g.group }}</button>
+          <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" class="ctx-toggle rounded border-slate-300 text-slate-deep focus:ring-slate-soft"
+                   data-target="ctx-sec-{{ g.group_id }}" {% if g.group_id in answered_groups %}checked{% endif %} />
+            {{ g.group }}
+          </label>
           {% endfor %}
         </div>
 
-        <!-- sub-tab panels -->
-        <div class="tabpanels flex-1 min-w-0">
-
-          <!-- Qualifications sub-tab -->
-          <div data-panel="sub-qual">
-            <h3 class="text-base font-semibold text-slate-deep">Qualifications</h3>
-            <p class="text-xs text-slate-500 mb-3">
-              Any qualifications, assumptions or exclusions for this job. Add as text and/or upload a document.
-            </p>
-            <form hx-post="/projects/{{ project.id }}/section-text"
-                  hx-target="#qual-text-status" hx-swap="innerHTML" class="mb-4">
-              <input type="hidden" name="section" value="qualifications" />
-              <textarea name="text" rows="3"
-                        placeholder="e.g. Price excludes asbestos removal; assumes scaffold provided by main contractor…"
-                        class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none">{{ project.section_text.get('qualifications', '') }}</textarea>
-              <div class="flex items-center gap-3 mt-2">
-                <button type="submit"
-                        class="bg-slate-deep hover:bg-slate-mid text-white text-xs font-medium rounded-lg px-4 py-2 transition-colors">
-                  Save qualifications text
-                </button>
-                <span id="qual-text-status" class="text-xs text-slate-400"></span>
-              </div>
-            </form>
-            {% with section = 'qualifications' %}{% include "_doc_uploader.html" %}{% endwith %}
-          </div>
-
-          <!-- One sub-tab per element group -->
-          {% for g in groups %}
-          <div data-panel="sub-{{ g.group_id }}">
-            <div class="flex items-center justify-between gap-3 mb-3">
-              <h3 class="text-base font-semibold text-slate-deep">{{ g.group }}</h3>
-              <span class="text-xs text-slate-400 num">{{ g.n_questions }} question{{ '' if g.n_questions == 1 else 's' }}</span>
+        <!-- Qualifications section -->
+        <div id="ctx-sec-qual" class="ctx-section border border-amber-200 bg-amber-50/40 rounded-lg p-4 mb-4">
+          <h3 class="text-sm font-semibold text-slate-deep">Qualifications</h3>
+          <p class="text-xs text-slate-500 mb-3">Overall job qualifications, assumptions or exclusions — as text and/or a document.</p>
+          <form hx-post="/projects/{{ project.id }}/section-text"
+                hx-target="#qual-text-status" hx-swap="innerHTML" class="mb-4">
+            <input type="hidden" name="section" value="qualifications" />
+            <textarea name="text" rows="3"
+                      placeholder="e.g. Price excludes asbestos removal; assumes scaffold provided by main contractor…"
+                      class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none">{{ project.section_text.get('qualifications', '') }}</textarea>
+            <div class="flex items-center gap-3 mt-2">
+              <button type="submit"
+                      class="bg-slate-deep hover:bg-slate-mid text-white text-xs font-medium rounded-lg px-4 py-2 transition-colors">
+                Save
+              </button>
+              <span id="qual-text-status" class="text-xs text-slate-400"></span>
             </div>
+          </form>
+          {% with section = 'qualifications' %}{% include "_doc_uploader.html" %}{% endwith %}
+        </div>
 
-            <div class="space-y-6">
-              {% for sub in g.subelements %}
-              <div class="border border-slate-100 rounded-lg p-4">
-                <p class="text-sm font-medium text-ink mb-3">{{ sub.name }}</p>
-                <div class="space-y-5">
-                  {% for q in sub.questions %}
-                  {% set val = answers.get(q.qid, '') %}
-                  <div>
-                    <label for="{{ q.qid }}" class="block text-sm text-ink font-medium">
-                      {{ q.question }}
-                      {% if q.unit %}<span class="text-slate-400 font-normal">({{ q.unit }})</span>{% endif %}
-                    </label>
-
-                    {% if q.field_kind == 'select' %}
-                      <select id="{{ q.qid }}" name="{{ q.qid }}" class="ctx-field mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none">
-                        <option value="">— select —</option>
-                        {% for opt in q.options %}
-                          <option value="{{ opt }}" {% if val == opt %}selected{% endif %}>{{ opt }}</option>
-                        {% endfor %}
-                      </select>
-
-                    {% elif q.field_kind == 'multiselect' %}
-                      <div class="mt-1 flex flex-wrap gap-x-5 gap-y-1">
-                        {% for opt in q.options %}
-                        <label class="inline-flex items-center gap-2 text-sm text-slate-600">
-                          <input type="checkbox" name="{{ q.qid }}" value="{{ opt }}"
-                                 {% if val is iterable and val is not string and opt in val %}checked{% elif val == opt %}checked{% endif %}
-                                 class="ctx-field rounded border-slate-300 text-slate-deep focus:ring-slate-soft" />
-                          {{ opt }}
-                        </label>
-                        {% endfor %}
-                      </div>
-
-                    {% elif q.field_kind == 'number' %}
-                      <input id="{{ q.qid }}" name="{{ q.qid }}" type="number" step="any" value="{{ val }}"
-                             placeholder="{% if q.default %}e.g. {{ q.default }}{% endif %}"
-                             class="ctx-field mt-1 w-full sm:w-64 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
-
-                    {% else %}
-                      <textarea id="{{ q.qid }}" name="{{ q.qid }}" rows="2"
-                                placeholder="{% if q.default %}Default: {{ q.default }}{% endif %}"
-                                class="ctx-field mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none">{{ val }}</textarea>
-                    {% endif %}
-
-                    <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
-                      <span class="font-mono text-slate-300">{{ q.qid }}</span>
-                      · {{ q.informs }}
-                      {% if q.feeds_step %} · <span class="text-slate-400">feeds {{ q.feeds_step }}</span>{% endif %}
-                      {% if q.source_doc %} · <span class="italic">{{ q.source_doc }}</span>{% endif %}
-                    </p>
-                  </div>
-                  {% endfor %}
+        <!-- One section per element group -->
+        {% for g in groups %}
+        <div id="ctx-sec-{{ g.group_id }}" class="ctx-section border border-slate-200 rounded-lg p-4 mb-4">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <h3 class="text-sm font-semibold text-slate-deep">{{ g.group }}</h3>
+            <span class="text-xs text-slate-400 num">{{ g.n_questions }} question{{ '' if g.n_questions == 1 else 's' }}</span>
+          </div>
+          <div class="space-y-6">
+            {% for sub in g.subelements %}
+            <div class="border border-slate-100 rounded-lg p-4">
+              <p class="text-sm font-medium text-ink mb-3">{{ sub.name }}</p>
+              <div class="space-y-5">
+                {% for q in sub.questions %}
+                {% set val = answers.get(q.qid, '') %}
+                <div>
+                  <label for="{{ q.qid }}" class="block text-sm text-ink font-medium">
+                    {{ q.question }}
+                    {% if q.unit %}<span class="text-slate-400 font-normal">({{ q.unit }})</span>{% endif %}
+                  </label>
+                  {% if q.field_kind == 'select' %}
+                    <select id="{{ q.qid }}" name="{{ q.qid }}" class="ctx-field mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none">
+                      <option value="">— select —</option>
+                      {% for opt in q.options %}
+                        <option value="{{ opt }}" {% if val == opt %}selected{% endif %}>{{ opt }}</option>
+                      {% endfor %}
+                    </select>
+                  {% elif q.field_kind == 'multiselect' %}
+                    <div class="mt-1 flex flex-wrap gap-x-5 gap-y-1">
+                      {% for opt in q.options %}
+                      <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                        <input type="checkbox" name="{{ q.qid }}" value="{{ opt }}"
+                               {% if val is iterable and val is not string and opt in val %}checked{% elif val == opt %}checked{% endif %}
+                               class="ctx-field rounded border-slate-300 text-slate-deep focus:ring-slate-soft" />
+                        {{ opt }}
+                      </label>
+                      {% endfor %}
+                    </div>
+                  {% elif q.field_kind == 'number' %}
+                    <input id="{{ q.qid }}" name="{{ q.qid }}" type="number" step="any" value="{{ val }}"
+                           placeholder="{% if q.default %}e.g. {{ q.default }}{% endif %}"
+                           class="ctx-field mt-1 w-full sm:w-64 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
+                  {% else %}
+                    <textarea id="{{ q.qid }}" name="{{ q.qid }}" rows="2"
+                              placeholder="{% if q.default %}Default: {{ q.default }}{% endif %}"
+                              class="ctx-field mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none">{{ val }}</textarea>
+                  {% endif %}
+                  <p class="mt-1 text-[11px] leading-relaxed text-slate-400">
+                    <span class="font-mono text-slate-300">{{ q.qid }}</span> · {{ q.informs }}
+                  </p>
                 </div>
-              </div>
-              {% endfor %}
-
-              <div class="flex items-center gap-3">
-                <button type="button"
-                        hx-post="/projects/{{ project.id }}/context"
-                        hx-include=".ctx-field, #job-params" hx-target="#grpstatus-{{ g.group_id }}" hx-swap="innerHTML"
-                        class="bg-slate-deep hover:bg-slate-mid text-white text-xs font-medium rounded-lg px-4 py-2 transition-colors">
-                  Save
-                </button>
-                <span id="grpstatus-{{ g.group_id }}" class="text-xs text-slate-400"></span>
+                {% endfor %}
               </div>
             </div>
+            {% endfor %}
+            <div class="flex items-center gap-3">
+              <button type="button"
+                      hx-post="/projects/{{ project.id }}/context"
+                      hx-include=".ctx-field, #job-params" hx-target="#grpstatus-{{ g.group_id }}" hx-swap="innerHTML"
+                      class="bg-slate-deep hover:bg-slate-mid text-white text-xs font-medium rounded-lg px-4 py-2 transition-colors">
+                Save
+              </button>
+              <span id="grpstatus-{{ g.group_id }}" class="text-xs text-slate-400"></span>
+            </div>
           </div>
-          {% endfor %}
         </div>
-      </div>
-    </div>
+        {% endfor %}
+      </section>
 
-    <!-- ------------------------ TAB: JOB PARAMETERS ------------------------ -->
-    <div data-panel="params">
-      <h2 class="text-lg font-semibold text-slate-deep mb-1">Job parameters</h2>
-      <p class="text-sm text-slate-500 mb-4">Applied across the estimate.</p>
-      <div id="job-params" class="flex flex-wrap items-end gap-5">
-        <label class="block">
-          <span class="block text-xs font-medium text-slate-500 mb-1">Profit markup (%)</span>
-          <input type="number" step="any" min="0" max="100" name="markup_pct"
-                 value="{{ project.markup_pct|numg }}" placeholder="e.g. 20"
-                 class="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
-        </label>
-        <label class="block">
-          <span class="block text-xs font-medium text-slate-500 mb-1">Waste factor (%)</span>
-          <input type="number" step="any" min="0" max="100" name="waste_pct"
-                 value="{{ project.waste_pct|numg }}" placeholder="e.g. 10"
-                 class="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none" />
-        </label>
-      </div>
-      <div class="flex items-center gap-3 mt-4">
-        <button type="button"
-                hx-post="/projects/{{ project.id }}/context"
-                hx-include="#job-params" hx-target="#jobparams-status" hx-swap="innerHTML"
-                class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-5 py-2 transition-colors">
-          Save
-        </button>
-        <span id="jobparams-status" class="text-xs text-slate-400"></span>
-      </div>
-    </div>
-
-    <!-- ------------------------ TAB: ESTIMATE ------------------------ -->
-    <div data-panel="estimate">
-      <div class="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h2 class="text-lg font-semibold text-slate-deep mb-1">Estimate</h2>
-          <p class="text-sm text-slate-500 max-w-xl">
-            <strong class="font-medium text-slate-deep">Save</strong> writes everything you've entered to the project's
-            storage folder so you can return later.
-            <strong class="font-medium text-slate-deep">Estimate</strong> compiles the full project context, runs the
-            workflow, and produces a pricing sheet and tender document to download.
-          </p>
-        </div>
-        <div id="save-status" class="text-sm text-slate-500">
-          {% include "_save_status.html" %}
-        </div>
-      </div>
-
-      <div class="mt-6 flex items-center justify-between gap-3 flex-wrap border-t border-slate-100 pt-5">
+      <div class="border-t border-slate-100 pt-5 flex items-center justify-between gap-3 flex-wrap">
         <div class="flex items-center gap-3">
           <button type="button"
                   hx-post="/projects/{{ project.id }}/context"
@@ -250,17 +216,64 @@
                   class="border border-slate-300 hover:border-slate-mid text-slate-deep text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
             Save
           </button>
-          <span class="text-xs text-slate-400">Saves everything you've entered to the project folder.</span>
+          <span id="save-status" class="text-sm text-slate-500">{% include "_save_status.html" %}</span>
         </div>
-        <div class="flex items-center gap-3">
-          <span class="htmx-indicator text-xs text-slate-400">Working…</span>
-          <button type="button"
-                  hx-post="/projects/{{ project.id }}/tender"
-                  hx-include=".ctx-field, #job-params" hx-target="#tender-result" hx-swap="innerHTML"
-                  class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg px-6 py-2.5 shadow-sm transition-colors">
-            Estimate
-          </button>
-        </div>
+        <button type="button" onclick="document.querySelector('[data-tab=step2]').click()"
+                class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
+          Continue to draft pricing &rarr;
+        </button>
+      </div>
+    </div>
+
+    <!-- ==================== STEP 2: DRAFT PRICING REVIEW ==================== -->
+    <div data-panel="step2">
+      <h2 class="text-lg font-semibold text-slate-deep mb-1">Draft pricing review</h2>
+      <p class="text-sm text-slate-500 mb-4 max-w-2xl">
+        Generate the draft pricing sheet. Each line item is returned one at a time —
+        add qualifying information to an item, or skip it, then the next item appears.
+      </p>
+
+      <div class="flex items-center gap-3 mb-5">
+        <button type="button"
+                hx-post="/projects/{{ project.id }}/draft"
+                hx-include=".ctx-field, #job-params"
+                hx-target="#draft-result" hx-swap="innerHTML"
+                class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-5 py-2.5 transition-colors">
+          {{ 'Regenerate draft pricing' if draft.status != 'none' else 'Generate draft pricing' }}
+        </button>
+        <span class="htmx-indicator text-xs text-slate-400">Working…</span>
+        {% if draft.status != 'none' %}
+        <span class="text-xs text-amber-600">Regenerating replaces the current draft and clears its qualifications.</span>
+        {% endif %}
+      </div>
+
+      <div id="draft-result">
+        {% if draft.status in ('review', 'complete') %}
+          {% with item = (draft['items'][draft.current] if (draft.status == 'review' and draft.current < draft['items']|length) else None),
+                  n_items = draft['items']|length,
+                  n_qualified = draft['items']|selectattr('qualification')|list|length %}
+            {% include "_draft_item.html" %}
+          {% endwith %}
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ==================== STEP 3: FINAL DOCUMENTS ==================== -->
+    <div data-panel="step3">
+      <h2 class="text-lg font-semibold text-slate-deep mb-1">Final pricing sheet &amp; tender</h2>
+      <p class="text-sm text-slate-500 mb-5 max-w-2xl">
+        Resubmits the pricing sheet with your item qualifications, runs the full
+        workflow and returns the final pricing sheet and tender document to download.
+      </p>
+      <div class="flex items-center gap-3">
+        <button type="button"
+                hx-post="/projects/{{ project.id }}/tender"
+                hx-include=".ctx-field, #job-params"
+                hx-target="#tender-result" hx-swap="innerHTML"
+                class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg px-6 py-2.5 shadow-sm transition-colors">
+          Generate final pricing &amp; tender
+        </button>
+        <span class="htmx-indicator text-xs text-slate-400">Working…</span>
       </div>
       <div id="tender-result" class="mt-4"></div>
     </div>
@@ -274,8 +287,7 @@
       var nav = group.querySelector(':scope > .tabnav');
       var wrap = group.querySelector(':scope > .tabpanels');
       if (!nav || !wrap) return;
-      var btns = Array.prototype.filter.call(nav.querySelectorAll('[data-tab]'),
-        function (b) { return b.closest('.tabnav') === nav; });
+      var btns = Array.prototype.slice.call(nav.querySelectorAll('[data-tab]'));
       var panels = Array.prototype.filter.call(wrap.children,
         function (p) { return p.hasAttribute('data-panel'); });
       function show(name) {
@@ -288,6 +300,14 @@
       if (btns[0]) show(btns[0].getAttribute('data-tab'));
     }
     document.querySelectorAll('[data-tabs]').forEach(initTabs);
+
+    document.querySelectorAll('.ctx-toggle').forEach(function (cb) {
+      var sec = document.getElementById(cb.getAttribute('data-target'));
+      if (!sec) return;
+      function sync() { sec.classList.toggle('is-open', cb.checked); }
+      cb.addEventListener('change', sync);
+      sync();
+    });
   })();
 </script>
 

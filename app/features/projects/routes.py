@@ -169,13 +169,28 @@ def detail_page(pid: str, request: Request,
     rec = core.get_project(pid)
     if not rec:
         raise HTTPException(404, "Project not found")
+    answers = rec.get("answers", {})
+    groups = question_map.groups()
+    # Groups that already hold data — pre-checked in the optional-context
+    # checklist so returning users see their sections open.
+    answered_groups = set()
+    for g in groups:
+        for sub in g.get("subelements", []):
+            if any(q["qid"] in answers for q in sub.get("questions", [])):
+                answered_groups.add(g["group_id"])
+                break
+    qual_active = bool(core.section_text(rec, core.SECTION_QUALIFICATIONS)
+                       or core.documents_in(rec, core.SECTION_QUALIFICATIONS))
     return templates.TemplateResponse(request, "project_detail.html", {
         "active": "projects",
         "project": rec,
-        "groups": question_map.groups(),
-        "answers": rec.get("answers", {}),
+        "groups": groups,
+        "answers": answers,
         "answered": core.answered_count(rec),
         "total_questions": question_map.total_questions(),
+        "answered_groups": answered_groups,
+        "qual_active": qual_active,
+        "draft": core.draft_state(rec),
     })
 
 
@@ -302,19 +317,94 @@ async def save_context(pid: str, request: Request,
 
 
 # --------------------------------------------------------------------------- #
-# Estimate workflow                                                            #
+# Estimate workflow (two passes: draft items -> qualifications -> final)       #
 # --------------------------------------------------------------------------- #
 
-@router.post("/{pid}/tender", response_class=HTMLResponse)
-async def start_tender(pid: str, request: Request,
-                       sid: str = Depends(auth.require_login)):
-    """Save the latest context, then kick off the background tender workflow
-    and return the status panel (which polls itself until complete)."""
+def _draft_item_ctx(rec: dict) -> dict:
+    d = core.draft_state(rec)
+    return {
+        "project": rec,
+        "draft": d,
+        "item": core.current_draft_item(rec),
+        "n_items": len(d.get("items", [])),
+        "n_qualified": sum(1 for i in d.get("items", []) if i.get("qualification")),
+    }
+
+
+@router.post("/{pid}/draft", response_class=HTMLResponse)
+async def start_draft(pid: str, request: Request,
+                      sid: str = Depends(auth.require_login)):
+    """Save the latest inputs, then generate the DRAFT pricing items in the
+    background. The status panel polls and then opens the item review loop."""
     rec = core.get_project(pid)
     if not rec:
         raise HTTPException(404)
     _save_form(pid, _collapse(await request.form()))
-    job = sessions.create_tender_job(pid)
+    job = sessions.create_tender_job(pid, kind="draft")
+    tender.start(job.job_id)
+    return templates.TemplateResponse(request, "_draft_status.html", {
+        "project": rec, "job": job,
+    })
+
+
+@router.get("/{pid}/draft/status/{job_id}", response_class=HTMLResponse)
+def draft_status(pid: str, job_id: str, request: Request,
+                 sid: str = Depends(auth.require_login)):
+    job = sessions.get_tender_job(job_id)
+    if not job or job.project_id != pid or job.kind != "draft":
+        raise HTTPException(404)
+    rec = core.get_project(pid)
+    if job.status == "done":
+        return templates.TemplateResponse(request, "_draft_item.html",
+                                          _draft_item_ctx(rec))
+    return templates.TemplateResponse(request, "_draft_status.html", {
+        "project": rec, "job": job,
+    })
+
+
+@router.get("/{pid}/draft/item", response_class=HTMLResponse)
+def draft_item(pid: str, request: Request,
+               sid: str = Depends(auth.require_login)):
+    rec = core.get_project(pid)
+    if not rec:
+        raise HTTPException(404)
+    return templates.TemplateResponse(request, "_draft_item.html",
+                                      _draft_item_ctx(rec))
+
+
+@router.post("/{pid}/draft/qualify", response_class=HTMLResponse)
+def draft_qualify(pid: str, request: Request,
+                  sid: str = Depends(auth.require_login),
+                  qualification: str = Form(""),
+                  action: str = Form("submit")):
+    """Record the qualification (or skip) for the current item, advance, and
+    return the next item — or the completion panel."""
+    rec = core.get_project(pid)
+    if not rec:
+        raise HTTPException(404)
+    rec = core.qualify_current_item(pid, qualification, skipped=(action == "skip"))
+    return templates.TemplateResponse(request, "_draft_item.html",
+                                      _draft_item_ctx(rec))
+
+
+@router.post("/{pid}/draft/review-again", response_class=HTMLResponse)
+def draft_review_again(pid: str, request: Request,
+                       sid: str = Depends(auth.require_login)):
+    rec = core.reopen_draft_review(pid)
+    return templates.TemplateResponse(request, "_draft_item.html",
+                                      _draft_item_ctx(rec))
+
+
+@router.post("/{pid}/tender", response_class=HTMLResponse)
+async def start_tender(pid: str, request: Request,
+                       sid: str = Depends(auth.require_login)):
+    """FINAL pass: resubmit the pricing sheet with qualifications — generates
+    the final pricing sheet + tender in the background."""
+    rec = core.get_project(pid)
+    if not rec:
+        raise HTTPException(404)
+    _save_form(pid, _collapse(await request.form()))
+    job = sessions.create_tender_job(pid, kind="final")
     tender.start(job.job_id)
     return templates.TemplateResponse(request, "_tender_status.html", {
         "project": rec, "job": job,

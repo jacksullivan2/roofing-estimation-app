@@ -106,6 +106,7 @@ def _normalise(rec: dict) -> dict:
     rec.setdefault("section_text", {})
     rec.setdefault("markup_pct", None)
     rec.setdefault("waste_pct", None)
+    rec.setdefault("draft", {"status": "none", "items": [], "current": 0})
     for d in rec.get("documents", []):
         d.setdefault("section", SECTION_PROJECT)
     return rec
@@ -268,6 +269,88 @@ def save_answers(pid: str, posted: dict[str, object]) -> dict:
 
 def answered_count(rec: dict) -> int:
     return sum(1 for v in rec.get("answers", {}).values() if _has_value(v))
+
+
+# --------------------------------------------------------------------------- #
+# Draft pricing review (item-by-item qualifications)                          #
+# --------------------------------------------------------------------------- #
+# rec["draft"] = {
+#   "status": "none" | "review" | "complete",
+#   "items": [{"idx", "group", "item", "detail", "qty", "unit",
+#              "qualification": str, "skipped": bool, "reviewed": bool}],
+#   "current": int,          # index of the item awaiting review
+#   "generated_at": float,
+# }
+
+def draft_state(rec: dict) -> dict:
+    return rec.get("draft") or {"status": "none", "items": [], "current": 0}
+
+
+def set_draft_items(pid: str, items: list[dict]) -> dict:
+    """Store a freshly generated draft and open the review loop."""
+    rec = get_project(pid)
+    if not rec:
+        raise KeyError(pid)
+    norm = []
+    for i, it in enumerate(items):
+        norm.append({
+            "idx": i,
+            "group": it.get("group", ""),
+            "item": it.get("item", ""),
+            "detail": it.get("detail", ""),
+            "qty": it.get("qty", ""),
+            "unit": it.get("unit", ""),
+            "qualification": "",
+            "skipped": False,
+            "reviewed": False,
+        })
+    rec["draft"] = {"status": "review" if norm else "complete",
+                    "items": norm, "current": 0, "generated_at": _now()}
+    return _persist(rec)
+
+
+def current_draft_item(rec: dict) -> dict | None:
+    d = draft_state(rec)
+    items = d.get("items", [])
+    cur = d.get("current", 0)
+    if d.get("status") != "review" or cur >= len(items):
+        return None
+    return items[cur]
+
+
+def qualify_current_item(pid: str, qualification: str, skipped: bool) -> dict:
+    """Record the qualification (or skip) for the current item and advance.
+    Marks the draft complete when the last item is reviewed."""
+    rec = get_project(pid)
+    if not rec:
+        raise KeyError(pid)
+    d = draft_state(rec)
+    items = d.get("items", [])
+    cur = d.get("current", 0)
+    if d.get("status") == "review" and cur < len(items):
+        items[cur]["qualification"] = "" if skipped else (qualification or "").strip()
+        items[cur]["skipped"] = bool(skipped)
+        items[cur]["reviewed"] = True
+        d["current"] = cur + 1
+        if d["current"] >= len(items):
+            d["status"] = "complete"
+        rec["draft"] = d
+        _persist(rec)
+    return rec
+
+
+def reopen_draft_review(pid: str) -> dict:
+    """Let the user walk the items again (answers are kept)."""
+    rec = get_project(pid)
+    if not rec:
+        raise KeyError(pid)
+    d = draft_state(rec)
+    if d.get("items"):
+        d["status"] = "review"
+        d["current"] = 0
+        rec["draft"] = d
+        _persist(rec)
+    return rec
 
 
 # --------------------------------------------------------------------------- #
@@ -501,4 +584,5 @@ def context_export(rec: dict) -> dict:
         },
         "context": items,
         "n_context_answers": len(items),
+        "draft_items": draft_state(rec).get("items", []),
     }
