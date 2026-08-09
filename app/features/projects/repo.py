@@ -28,6 +28,11 @@ from app.infra import local_store, s3_config
 
 LOGGER = logging.getLogger(__name__)
 
+# Reserved top-level folder holding the contractor's shared labour-rates
+# documents (used as a fallback when a project has none uploaded). Kept out
+# of the project namespace — create_project must never use this name.
+LABOUR_LIBRARY_FOLDER = "_labour_rates"
+
 
 def _safe_name(name: str) -> str:
     name = Path(name or "").name
@@ -77,6 +82,27 @@ class LocalRepo:
             p.unlink(missing_ok=True)
         except OSError:
             pass
+
+    # labour-rates library ------------------------------------------------- #
+    def _lab_dir(self) -> Path:
+        d = local_store.base_dir() / LABOUR_LIBRARY_FOLDER
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def list_labour_rates(self) -> list[dict]:
+        out = []
+        for p in self._lab_dir().glob("*"):
+            if p.is_file():
+                out.append({"filename": p.name, "size": p.stat().st_size,
+                            "modified": p.stat().st_mtime})
+        return out
+
+    def read_labour_rates(self, filename: str) -> bytes | None:
+        p = self._lab_dir() / _safe_name(filename)
+        return p.read_bytes() if p.exists() else None
+
+    def write_labour_rates(self, filename: str, data: bytes) -> None:
+        (self._lab_dir() / _safe_name(filename)).write_bytes(data)
 
     def delete_project(self, pid: str) -> None:
         pdir = local_store.uploads_dir() / pid
@@ -177,6 +203,37 @@ class S3Repo:
             self._client.delete_object(Bucket=self.bucket, Key=self._doc_key(pid, filename))
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("S3 delete_document failed: %s", exc)
+
+    # labour-rates library ------------------------------------------------- #
+    def _lab_key(self, filename: str) -> str:
+        return f"{LABOUR_LIBRARY_FOLDER}/{_safe_name(filename)}"
+
+    def list_labour_rates(self) -> list[dict]:
+        out: list[dict] = []
+        try:
+            paginator = self._client.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=self.bucket,
+                                           Prefix=f"{LABOUR_LIBRARY_FOLDER}/"):
+                for obj in page.get("Contents", []):
+                    name = obj["Key"].split("/", 1)[-1]
+                    if not name:
+                        continue
+                    out.append({"filename": name, "size": obj.get("Size", 0),
+                                "modified": obj["LastModified"].timestamp()})
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("S3 list_labour_rates failed: %s", exc)
+        return out
+
+    def read_labour_rates(self, filename: str) -> bytes | None:
+        try:
+            return self._client.get_object(
+                Bucket=self.bucket, Key=self._lab_key(filename))["Body"].read()
+        except Exception:  # noqa: BLE001
+            return None
+
+    def write_labour_rates(self, filename: str, data: bytes) -> None:
+        self._client.put_object(Bucket=self.bucket,
+                                Key=self._lab_key(filename), Body=data)
 
     def delete_project(self, pid: str) -> None:
         try:

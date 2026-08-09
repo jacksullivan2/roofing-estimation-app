@@ -54,6 +54,50 @@
           Upload condition reports, schedules of works, specifications, drawings, photos and price documents.
         </p>
         {% with section = 'project' %}{% include "_doc_uploader.html" %}{% endwith %}
+
+        <div class="mt-3 text-xs rounded-lg px-3 py-2 border
+                    {% if labour_has_project %}text-emerald-700 bg-emerald-50 border-emerald-200
+                    {% elif labour_latest %}text-slate-600 bg-slate-50 border-slate-200
+                    {% else %}text-amber-700 bg-amber-50 border-amber-200{% endif %}">
+          {% if labour_has_project %}
+            Labour rates detected in your uploads — they'll be used for the labour estimate.
+          {% elif labour_latest %}
+            No labour rates uploaded — the estimate will use the most recent document from your
+            shared labour rates library ({{ labour_latest.filename }}). Upload project-specific
+            rates here to override.
+          {% else %}
+            No labour rates uploaded and the shared labour rates library is empty — labour will be
+            estimated from internal assumptions. Add rates here, or to the library on the homepage.
+          {% endif %}
+        </div>
+
+        {% set cp = project.client_pricing or {} %}
+        {% set proj_docs = project.documents|selectattr('section','equalto','project')|list %}
+        <div class="mt-4 border border-slate-200 rounded-lg p-4 bg-slate-50">
+          <label class="inline-flex items-start gap-2 text-sm text-slate-700">
+            <input type="hidden" name="client_pricing_present" value="1" class="ctx-field" />
+            <input type="checkbox" name="client_pricing_enabled" id="client-pricing-enabled"
+                   class="ctx-field mt-0.5 rounded border-slate-300 text-slate-deep focus:ring-slate-soft"
+                   {% if cp.enabled %}checked{% endif %} />
+            <span>
+              <span class="font-medium text-slate-deep">A client pricing sheet is included in the project documents.</span><br/>
+              <span class="text-xs text-slate-500">The estimate will be populated onto that sheet (columns and values added to it), rather than a new pricing workbook being created.</span>
+            </span>
+          </label>
+          <div id="client-pricing-picker" class="mt-3 {% if not cp.enabled %}hidden{% endif %}">
+            <label class="block text-xs font-medium text-slate-500 mb-1">Which uploaded document is the pricing sheet?</label>
+            <select name="client_pricing_filename"
+                    class="ctx-field w-full sm:w-96 rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-slate-mid focus:ring-2 focus:ring-slate-soft outline-none">
+              <option value="">— select the pricing sheet —</option>
+              {% for d in proj_docs %}
+              <option value="{{ d.filename }}" {% if cp.filename == d.filename %}selected{% endif %}>{{ d.filename }}</option>
+              {% endfor %}
+            </select>
+            <p class="text-[11px] text-slate-400 mt-1">
+              Upload the sheet above first if it isn't listed (refresh the page after uploading), then tick and select it. Saved with any Save button.
+            </p>
+          </div>
+        </div>
       </section>
 
       <section class="border-t border-slate-100 pt-6">
@@ -300,6 +344,14 @@
       if (btns[0]) show(btns[0].getAttribute('data-tab'));
     }
     document.querySelectorAll('[data-tabs]').forEach(initTabs);
+
+    var cpCb = document.getElementById('client-pricing-enabled');
+    var cpPick = document.getElementById('client-pricing-picker');
+    if (cpCb && cpPick) {
+      cpCb.addEventListener('change', function () {
+        cpPick.classList.toggle('hidden', !cpCb.checked);
+      });
+    }
 
     document.querySelectorAll('.ctx-toggle').forEach(function (cb) {
       var sec = document.getElementById(cb.getAttribute('data-target'));

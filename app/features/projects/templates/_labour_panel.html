@@ -1,0 +1,53 @@
+{# Shared labour-rates library panel for the homepage. Expects: labour_files. #}
+<details class="bg-white border border-slate-200 rounded-xl shadow-sm mb-8">
+  <summary class="flex items-center justify-between gap-3 px-6 py-4">
+    <span class="flex items-center gap-2">
+      <svg class="chev w-4 h-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path d="M7 5l6 5-6 5V5z"/></svg>
+      <span class="font-semibold text-slate-deep">Labour rates library</span>
+    </span>
+    <span class="text-xs text-slate-500 bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 num">
+      {{ labour_files|length }} document{{ '' if labour_files|length == 1 else 's' }}
+    </span>
+  </summary>
+
+  <div class="px-6 pb-6 border-t border-slate-100 pt-4">
+    <p class="text-sm text-slate-500 mb-4">
+      Shared labour-rates documents (general rate cards, or rates from other projects), kept in the
+      <code class="text-xs bg-slate-100 px-1 rounded">_labour_rates/</code> folder of your storage.
+      When a project has no labour-rates document uploaded, the estimate automatically uses the
+      <span class="font-medium text-slate-deep">most recently uploaded</span> document from here.
+    </p>
+
+    <form method="post" action="/projects/labour-rates" enctype="multipart/form-data"
+          class="flex flex-wrap items-center gap-3 mb-4">
+      <label class="flex-1 min-w-[240px]">
+        <input type="file" name="files" multiple
+               class="block w-full text-sm text-slate-600
+                      file:mr-3 file:rounded-lg file:border-0 file:bg-slate-soft
+                      file:px-4 file:py-2 file:text-slate-deep file:font-medium
+                      hover:file:bg-slate-200 cursor-pointer
+                      border border-slate-300 rounded-lg" />
+      </label>
+      <button type="submit"
+              class="bg-slate-deep hover:bg-slate-mid text-white text-sm font-medium rounded-lg px-4 py-2 transition-colors">
+        Add to library
+      </button>
+    </form>
+
+    {% if labour_files %}
+    <ul class="divide-y divide-slate-100 border border-slate-200 rounded-lg">
+      {% for f in labour_files %}
+      <li class="flex items-center justify-between gap-3 px-4 py-2.5">
+        <a href="/projects/labour-rates/{{ f.filename|urlencode }}"
+           class="text-sm text-slate-deep hover:underline truncate">{{ f.filename }}</a>
+        <span class="text-xs text-slate-400 shrink-0">
+          {{ f.modified|ts }}{% if loop.first %} · <span class="text-emerald-700 font-medium">latest — used as fallback</span>{% endif %}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-slate-400">The library is empty — upload your general labour rates so estimates always have a fallback.</p>
+    {% endif %}
+  </div>
+</details>

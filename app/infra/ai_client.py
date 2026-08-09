@@ -84,7 +84,12 @@ def generate_draft_items(export: dict, context_markdown: str,
             {"group": "General", "item": "Preliminaries & access",
              "detail": "Scaffold/access, welfare, supervision", "qty": "", "unit": "item"},
         ]
-    return {"ai_used": False, "items": items}
+    notes = ""
+    cp = export.get("client_pricing_sheet") or {}
+    if cp.get("enabled"):
+        notes = (f"Client pricing sheet flagged ('{cp.get('filename') or 'not selected'}') — "
+                 "final output will populate that sheet.")
+    return {"ai_used": False, "items": items, "notes": notes}
 
 
 # --------------------------------------------------------------------------- #
@@ -111,6 +116,12 @@ def _placeholder_pricing(export: dict) -> bytes:
     ws["A2"] = ("PLACEHOLDER — AI model not configured. Generated from project "
                 "context; rates to be populated.")
     ws["A2"].font = Font(italic=True, color="C00000")
+    cp = export.get("client_pricing_sheet") or {}
+    if cp.get("enabled"):
+        ws["A3"] = (f"CLIENT PRICING SHEET FLAGGED: '{cp.get('filename') or 'not selected'}' — "
+                    "the final estimate must populate that uploaded sheet "
+                    "(add columns/values to it), not this workbook.")
+        ws["A3"].font = Font(italic=True, bold=True, color="854F0B")
 
     ws["A4"] = "Client"; ws["B4"] = proj.get("client", "")
     ws["A5"] = "Reference"; ws["B5"] = proj.get("reference", "")
@@ -177,6 +188,8 @@ project context and the workflow steps below.*
 
 **Client:** {proj.get('client', '')}
 **Reference:** {proj.get('reference', '')}
+**Client pricing sheet:** {(export.get('client_pricing_sheet') or {}).get('filename') or 'none flagged'}
+**Labour rates source:** {_labour_line(export)}
 **Profit markup:** {proj.get('markup_pct')}%
 **Waste factor:** {proj.get('waste_pct')}%
 **Generated:** {_dt.datetime.now().strftime('%d %b %Y, %H:%M')}
@@ -191,6 +204,16 @@ project context and the workflow steps below.*
 {context_markdown}
 """
     return body.encode("utf-8")
+
+
+def _labour_line(export: dict) -> str:
+    lab = export.get("labour_rates") or {}
+    src, fn = lab.get("source"), lab.get("filename", "")
+    if src == "project":
+        return f"project upload ({fn})"
+    if src == "library":
+        return f"shared library — most recent ({fn})"
+    return "none available (internal assumptions)"
 
 
 def _quals_section(export: dict) -> str:
@@ -245,6 +268,15 @@ def _invoke_remote(export: dict, context_markdown: str,
         "context_markdown": context_markdown,
         "workflow_steps": [{"name": p["name"], "text": p["text"]} for p in prompts],
         "documents": [{"filename": d["filename"]} for d in documents],
+        # When enabled, the model must populate THIS uploaded sheet (add
+        # columns/values) instead of producing a fresh pricing workbook.
+        "client_pricing_sheet": export.get("client_pricing_sheet")
+                                 or {"enabled": False, "filename": ""},
+        # Which labour-rates document applies (project upload, shared library
+        # fallback, or none). The shared doc itself is in `documents`, its
+        # filename prefixed "[Shared labour rates] ".
+        "labour_rates": export.get("labour_rates")
+                         or {"source": "none", "filename": ""},
     }
 
     if provider == "http":

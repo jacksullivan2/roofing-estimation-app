@@ -107,9 +107,31 @@ def _normalise(rec: dict) -> dict:
     rec.setdefault("markup_pct", None)
     rec.setdefault("waste_pct", None)
     rec.setdefault("draft", {"status": "none", "items": [], "current": 0})
+    rec.setdefault("client_pricing", {"enabled": False, "filename": ""})
     for d in rec.get("documents", []):
         d.setdefault("section", SECTION_PROJECT)
     return rec
+
+
+def set_client_pricing(pid: str, enabled: bool, filename: str) -> dict:
+    """Flag an uploaded project document as the client's pricing sheet that
+    the estimate should populate (columns/values added to THAT sheet)."""
+    rec = get_project(pid)
+    if not rec:
+        raise KeyError(pid)
+    filename = (filename or "").strip()
+    valid = {d["filename"] for d in documents_in(rec, SECTION_PROJECT)}
+    if filename and filename not in valid:
+        filename = ""  # stale/unknown selection — drop it
+    if not enabled:
+        rec["client_pricing"] = {"enabled": False, "filename": ""}
+    else:
+        rec["client_pricing"] = {"enabled": True, "filename": filename}
+    return _persist(rec)
+
+
+def client_pricing(rec: dict) -> dict:
+    return rec.get("client_pricing") or {"enabled": False, "filename": ""}
 
 
 def documents_in(rec: dict, section: str) -> list[dict]:
@@ -128,6 +150,8 @@ def create_project(name: str, client: str = "", reference: str = "") -> dict:
     # if a project with that folder already exists.
     repo = _repo.get_repo()
     base = _safe_filename(display)
+    if base.lower() == _repo.LABOUR_LIBRARY_FOLDER:
+        base = f"{base} (project)"  # reserved for the shared labour-rates library
     pid = base
     n = 2
     while repo.read_record(pid) is not None:
@@ -417,6 +441,12 @@ def build_context_document(rec: dict) -> tuple[str, bytes]:
     a("## Job parameters")
     a(f"- **Profit markup:** {_fmt_pct(rec.get('markup_pct'))}")
     a(f"- **Waste factor:** {_fmt_pct(rec.get('waste_pct'))}")
+    cp = client_pricing(rec)
+    if cp.get("enabled"):
+        a(f"- **Client pricing sheet to populate:** "
+          f"{cp.get('filename') or '(flagged, but no file selected)'} — "
+          "the estimate must be populated onto this uploaded sheet "
+          "(add columns/values), not a new workbook.")
     a("")
 
     # Qualifications.
@@ -585,4 +615,5 @@ def context_export(rec: dict) -> dict:
         "context": items,
         "n_context_answers": len(items),
         "draft_items": draft_state(rec).get("items", []),
+        "client_pricing_sheet": client_pricing(rec),
     }

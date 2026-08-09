@@ -25,7 +25,7 @@ from fastapi.templating import Jinja2Templates
 
 from app import auth, question_map, sessions, settings
 from app.infra import s3_config
-from . import core, repo, tender
+from . import core, labour_rates, repo, tender
 
 LOGGER = logging.getLogger(__name__)
 
@@ -110,6 +110,7 @@ def list_page(request: Request, sid: str = Depends(auth.require_login),
     }
     ok = None if s3ok is None else (s3ok == "1")
     ctx.update(_storage_ctx(status=s3msg, ok=ok))
+    ctx["labour_files"] = labour_rates.list_library()
     return templates.TemplateResponse(request, "projects_list.html", ctx)
 
 
@@ -145,6 +146,39 @@ def disconnect_storage(request: Request, sid: str = Depends(auth.require_login))
     return RedirectResponse(
         "/projects?s3ok=1&s3msg=" + _qs("Disconnected — using local storage."),
         status_code=303)
+
+
+# --- Labour-rates library (must be registered before /{pid}) ---------------- #
+
+@router.post("/labour-rates")
+async def labour_rates_upload(request: Request,
+                              sid: str = Depends(auth.require_login),
+                              files: list[UploadFile] = File(default=[])):
+    n = 0
+    for uf in files:
+        name = (uf.filename or "").strip()
+        data = await uf.read()
+        if not name or not data:
+            continue
+        if not core.ext_allowed(name):
+            return RedirectResponse(
+                "/projects?s3ok=0&s3msg=" + _qs(f"{name}: unsupported file type"),
+                status_code=303)
+        labour_rates.upload_to_library(name, data)
+        n += 1
+    msg = f"Added {n} labour-rates document(s) to the library." if n else "No file selected."
+    return RedirectResponse(f"/projects?s3ok={'1' if n else '0'}&s3msg=" + _qs(msg),
+                            status_code=303)
+
+
+@router.get("/labour-rates/{filename}")
+def labour_rates_download(filename: str,
+                          sid: str = Depends(auth.require_login)):
+    data = labour_rates.read_library(filename)
+    if data is None:
+        raise HTTPException(404)
+    return Response(content=data, media_type="application/octet-stream",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @router.post("")
@@ -191,6 +225,8 @@ def detail_page(pid: str, request: Request,
         "answered_groups": answered_groups,
         "qual_active": qual_active,
         "draft": core.draft_state(rec),
+        "labour_has_project": labour_rates.project_has_labour_rates(rec),
+        "labour_latest": labour_rates.latest_library_meta(),
     })
 
 
@@ -296,9 +332,19 @@ def _collapse(form) -> dict[str, object]:
 def _save_form(pid: str, posted: dict) -> dict:
     """Persist a (possibly partial) submit. Job params are only written when the
     fields are present, so a per-section save never wipes markup/waste; answers
-    are merged by qid, so unrelated sections are left untouched."""
+    are merged by qid, so unrelated sections are left untouched.
+
+    Client pricing sheet: checkboxes don't submit when unchecked, so the form
+    carries a hidden marker `client_pricing_present`. Only when the marker is
+    in the submit do we update the flag (checked state + selected file)."""
     if "markup_pct" in posted or "waste_pct" in posted:
         core.set_job_params(pid, posted.get("markup_pct"), posted.get("waste_pct"))
+    if "client_pricing_present" in posted:
+        core.set_client_pricing(
+            pid,
+            enabled=("client_pricing_enabled" in posted),
+            filename=str(posted.get("client_pricing_filename", "") or ""),
+        )
     return core.save_answers(pid, posted)
 
 

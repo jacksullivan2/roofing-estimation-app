@@ -22,7 +22,7 @@ import time
 
 from app import sessions
 from app.infra import ai_client, s3_client
-from . import core
+from . import core, labour_rates
 
 LOGGER = logging.getLogger(__name__)
 
@@ -58,6 +58,16 @@ def _run(job_id: str) -> None:
         export = core.context_export(rec)
         documents = core.project_document_payloads(rec)
 
+        # File categorisation follow-up: if the uploads contain no labour-rates
+        # document, pull the most recent one from the shared S3 library and
+        # add it to what the model sees.
+        job.step = "Checking labour rates"
+        lab = labour_rates.resolve(rec, documents)
+        export["labour_rates"] = {"source": lab["source"],
+                                  "filename": lab["filename"]}
+        if lab["source"] != "project":
+            job.notes = (job.notes + " " if job.notes else "") + lab["note"]
+
         if job.kind == "draft":
             # Step 3a — draft pass: derive the pricing line items only. The
             # UI then walks them one by one collecting qualifications.
@@ -68,7 +78,8 @@ def _run(job_id: str) -> None:
             )
             core.set_draft_items(job.project_id, draft.get("items", []))
             job.ai_used = bool(draft.get("ai_used"))
-            job.notes = draft.get("notes", "")
+            if draft.get("notes"):
+                job.notes = (job.notes + " " if job.notes else "") + draft["notes"]
             job.step = "Done"
             job.status = "done"
             return
@@ -85,7 +96,8 @@ def _run(job_id: str) -> None:
 
         # Step 4 — store outputs.
         job.ai_used = bool(result.get("ai_used"))
-        job.notes = result.get("notes", "")
+        if result.get("notes"):
+            job.notes = (job.notes + " " if job.notes else "") + result["notes"]
         pricing = result["pricing"]
         tender = result["tender"]
         job.pricing_bytes = pricing["bytes"]
