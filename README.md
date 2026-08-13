@@ -81,10 +81,24 @@ plumbing is testable today.
 | Concern | Where to wire it |
 | --- | --- |
 | S3 location for prompts | `AGENT_PROMPTS_S3_BUCKET` / `AGENT_PROMPTS_S3_PREFIX` / `AWS_REGION` + standard AWS creds → `app/infra/s3_client.py` |
-| AI provider & keys | `AI_PROVIDER` (`bedrock`\|`http`), `AI_API_KEY`, `AI_ENDPOINT`, `AI_MODEL_ID` → complete the matching branch in `app/infra/ai_client.py:_invoke_remote` |
+| AI provider & keys | `AI_PROVIDER` (`bedrock`\|`openai`\|`http`) + the matching vars below → `app/infra/ai_client.py` |
 
-The `http` provider branch is implemented against a simple base64-JSON
-contract; the `bedrock` branch has a marked `TODO` for the `invoke_model` call.
+Two fully-implemented providers run the **same step workflow** (steps 01–09
+draft, 10–11 final, shared `project_data.yaml`, write_section/read_document
+tools, skip rules):
+
+- **AWS Bedrock** (`AI_PROVIDER=bedrock`, `AI_MODEL_ID` required) —
+  `app/infra/bedrock_runner.py`, with explicit prompt-cache checkpoints.
+  AWS credentials come from the standard chain / instance role.
+- **OpenAI** (`AI_PROVIDER=openai`, `AI_API_KEY` required) —
+  `app/infra/openai_runner.py` via the Chat Completions API.
+  `AI_MODEL_ID` defaults to `gpt-4o`; set `AI_ENDPOINT` to target Azure
+  OpenAI or an OpenAI-compatible gateway. Prompt caching is automatic on
+  OpenAI's side; cached-token counts are reported in the job usage summary
+  either way. `AI_STEP_MODELS` per-step overrides apply to both providers.
+
+The `http` provider remains a simple base64-JSON contract for a custom
+endpoint. Switching provider is just an env change — no code or prompt edits.
 
 ---
 

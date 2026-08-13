@@ -67,12 +67,23 @@ AGENT_PROMPTS_LOCAL_DIR = os.getenv(
 )
 
 # AI model connection. AI_PROVIDER selects the integration branch in
-# app/infra/ai_client.py: "bedrock" (AWS) | "http" (generic REST) | "" (off).
+# app/infra/ai_client.py:
+#   "bedrock" — AWS Bedrock step workflow with prompt caching
+#               (AI_MODEL_ID required; AWS creds via the standard chain)
+#   "openai"  — the same step workflow on OpenAI chat completions
+#               (AI_API_KEY required; AI_MODEL_ID defaults to gpt-4o;
+#                AI_ENDPOINT optionally overrides the API URL for
+#                Azure OpenAI / OpenAI-compatible gateways)
+#   "http"    — generic REST endpoint (AI_ENDPOINT + AI_API_KEY required)
+#   ""        — off (placeholder outputs)
 AI_PROVIDER = os.getenv("AI_PROVIDER", "")
 AI_API_KEY = os.getenv("AI_API_KEY", "")
-AI_ENDPOINT = os.getenv("AI_ENDPOINT", "")        # REST endpoint (http provider)
-AI_MODEL_ID = os.getenv("AI_MODEL_ID", "")        # e.g. a Bedrock model id
+AI_ENDPOINT = os.getenv("AI_ENDPOINT", "")
+AI_MODEL_ID = os.getenv("AI_MODEL_ID", "")
 AI_TIMEOUT_SECONDS = int(os.getenv("AI_TIMEOUT_SECONDS", "300"))
+
+OPENAI_DEFAULT_MODEL = "gpt-4o"
+OPENAI_DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions"
 
 # ---- Bedrock step-runner + prompt caching (see app/infra/bedrock_runner.py).
 # Prompt caching re-uses the byte-identical prefix of consecutive requests
@@ -117,10 +128,13 @@ def s3_configured() -> bool:
 
 def ai_configured() -> bool:
     """True when enough is set to attempt a real model call. Bedrock needs a
-    model id; the generic http provider needs an endpoint + key."""
+    model id; openai needs an API key (model defaults to gpt-4o); the generic
+    http provider needs an endpoint + key."""
     provider = (AI_PROVIDER or "").strip().lower()
     if provider == "bedrock":
         return bool(AI_MODEL_ID.strip())
+    if provider == "openai":
+        return bool(AI_API_KEY.strip())
     if provider == "http":
         return bool(AI_ENDPOINT.strip() and AI_API_KEY.strip())
     return False
