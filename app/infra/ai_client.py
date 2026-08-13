@@ -5,10 +5,11 @@ documents, this produces two artefacts: a **pricing sheet** (.xlsx) and a
 **tender document**.
 
 Connection details (provider, API key, endpoint / model id) are supplied via
-environment variables — see app/settings.py. Until they are set,
-``generate_tender`` returns clearly-labelled **placeholder** outputs so the
-end-to-end flow (and the download UI) works today; swap in the real model by
-filling the env vars and completing the provider branch in ``_invoke_remote``.
+environment variables — see app/settings.py. With ``AI_PROVIDER=bedrock`` and
+an ``AI_MODEL_ID`` set, both passes run the prompt-cached step workflow in
+app/infra/bedrock_runner.py (draft pass = steps 01–09, final pass = 10–11).
+Until then, clearly-labelled **placeholder** outputs keep the end-to-end flow
+(and the download UI) working, and any AI failure degrades back to them.
 
 Return shape:
     {
@@ -47,20 +48,53 @@ def _safe(name: str) -> str:
 # --------------------------------------------------------------------------- #
 
 def generate_draft_items(export: dict, context_markdown: str,
-                         prompts: list[dict], documents: list[dict]) -> dict:
+                         prompts: list[dict], documents: list[dict],
+                         on_progress=None) -> dict:
     """Produce the DRAFT pricing line items the estimator reviews one by one.
 
-    With a configured model this should ask the model to derive line items
-    from the documents + context; until then we derive placeholder items
-    deterministically from the answered context so the review loop works.
-    Returns {"ai_used": bool, "items": [{group,item,detail,qty,unit}...]}.
+    With the bedrock provider configured this runs the draft pass of the
+    step workflow (steps 01–09, prompt-cached — see bedrock_runner). On any
+    failure, or when no model is configured, it falls back to deriving
+    placeholder items deterministically from the answered context so the
+    review loop always works.
+    Returns {"ai_used": bool, "items": [...], "notes": str, "usage": dict}.
     """
-    if settings.ai_configured():
-        # TODO: call the model (same providers as _invoke_remote) with a
-        # "derive line items" instruction and parse its JSON response.
-        # Fall through to the deterministic derivation until implemented.
-        pass
+    provider = (settings.AI_PROVIDER or "").strip().lower()
+    if settings.ai_configured() and provider == "bedrock":
+        from app.infra import bedrock_runner
 
+        try:
+            result = bedrock_runner.run_workflow(
+                "draft", export, prompts, documents, on_progress=on_progress)
+            step09 = (result.project_data.get("workflow_run") or {}).get("09") or {}
+            items = bedrock_runner.extract_draft_items(
+                result.project_data, step09.get("sections_written"))
+            if not items:
+                raise ai_err_no_items(result)
+            notes = (f"AI draft pass complete "
+                     f"(steps run: {', '.join(result.steps_run)}"
+                     + (f"; skipped: {', '.join(result.steps_skipped)}"
+                        if result.steps_skipped else "")
+                     + f"). {result.usage.summary()}.")
+            return {"ai_used": True, "items": items, "notes": notes,
+                    "usage": result.usage.as_dict()}
+        except Exception as exc:  # noqa: BLE001 — degrade, don't dead-end
+            LOGGER.exception("AI draft pass failed; using deterministic items.")
+            return {**_deterministic_draft(export),
+                    "notes": f"AI draft pass FAILED ({exc}) — deterministic "
+                             "placeholder items shown instead."}
+
+    return _deterministic_draft(export)
+
+
+def ai_err_no_items(result) -> "AIClientError":
+    return AIClientError(
+        "draft pass finished but no pricing items were found in "
+        f"project_data.yaml (steps run: {', '.join(result.steps_run)})")
+
+
+def _deterministic_draft(export: dict) -> dict:
+    """The pre-AI fallback: placeholder items from the answered context."""
     items: list[dict] = []
     for c in export.get("context", []):
         ans = c.get("answer")
@@ -315,18 +349,98 @@ def _invoke_remote(export: dict, context_markdown: str,
             },
         }
 
-    if provider == "bedrock":
-        # TODO: implement the AWS Bedrock call, e.g.:
-        #   import boto3
-        #   rt = boto3.client("bedrock-runtime", region_name=settings.AWS_REGION)
-        #   out = rt.invoke_model(modelId=settings.AI_MODEL_ID, body=json.dumps(payload))
-        # then parse `out` into the two artefacts.
-        raise AIClientError(
-            "Bedrock provider is selected but the bedrock call is not yet "
-            "implemented in ai_client._invoke_remote (add the invoke_model call)."
-        )
-
     raise AIClientError(f"Unknown AI_PROVIDER '{settings.AI_PROVIDER}'.")
+
+
+# --------------------------------------------------------------------------- #
+# Bedrock final pass — steps 10–11 via the cached step-runner                  #
+# --------------------------------------------------------------------------- #
+
+def _invoke_bedrock(export: dict, prompts: list[dict],
+                    documents: list[dict], on_progress=None) -> dict:
+    from app.infra import bedrock_runner
+
+    result = bedrock_runner.run_workflow(
+        "final", export, prompts, documents, on_progress=on_progress)
+    out = bedrock_runner.final_output(result.project_data)
+    if not out:
+        raise AIClientError(
+            "final pass finished but no final_output section was written to "
+            f"project_data.yaml (steps run: {', '.join(result.steps_run)}).")
+
+    name = _safe(export.get("project", {}).get("name", "project"))
+    rows = out.get("pricing_rows") or []
+    tender_md = out.get("tender_markdown") or ""
+    notes = (f"Generated by the Bedrock step workflow "
+             f"(steps run: {', '.join(result.steps_run)}). "
+             f"{result.usage.summary()}.")
+    return {
+        "ai_used": True,
+        "notes": notes,
+        "usage": result.usage.as_dict(),
+        "pricing": {
+            "filename": f"Pricing Sheet {name}.xlsx",
+            "bytes": _pricing_from_rows(export, rows),
+            "media_type": XLSX_MEDIA,
+        },
+        "tender": {
+            "filename": f"Tender {name}.md",
+            "bytes": tender_md.encode("utf-8"),
+            "media_type": MD_MEDIA,
+        },
+    }
+
+
+def _pricing_from_rows(export: dict, rows: list[dict]) -> bytes:
+    """Build the pricing workbook from step 11's pricing_rows, including the
+    Reasoning and Qualifications provenance columns."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+
+    proj = export.get("project", {})
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Pricing Sheet"
+
+    ws["A1"] = f"Pricing Sheet — {proj.get('name', '')}"
+    ws["A1"].font = Font(bold=True, size=14, color="1F3864")
+    ws["A2"] = "Client"; ws["B2"] = proj.get("client", "")
+    ws["A3"] = "Reference"; ws["B3"] = proj.get("reference", "")
+    ws["A4"] = "Profit markup (%)"; ws["B4"] = proj.get("markup_pct")
+    ws["A5"] = "Waste factor (%)"; ws["B5"] = proj.get("waste_pct")
+    for r in range(2, 6):
+        ws[f"A{r}"].font = Font(bold=True)
+
+    headers = ["Element Group", "Item", "Detail", "Qty", "Unit",
+               "Unit rate (£)", "Material (£)", "Labour (£)", "Line total (£)",
+               "Reasoning / Source", "Qualifications"]
+    head = Font(bold=True, color="FFFFFF")
+    headfill = PatternFill("solid", fgColor="1F3864")
+    hr = 7
+    for i, h in enumerate(headers, start=1):
+        c = ws.cell(hr, i, h)
+        c.font = head
+        c.fill = headfill
+        c.alignment = Alignment(horizontal="center", wrap_text=True)
+
+    keymap = ["group", "item", "detail", "qty", "unit", "unit_rate",
+              "material", "labour", "line_total", "reasoning", "qualifications"]
+    r = hr + 1
+    for row in rows:
+        for i, key in enumerate(keymap, start=1):
+            ws.cell(r, i, row.get(key, ""))
+        r += 1
+    if r == hr + 1:
+        ws.cell(r, 1, "(No pricing rows returned by the model.)")
+
+    widths = [22, 26, 40, 10, 8, 12, 12, 12, 13, 60, 40]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 # --------------------------------------------------------------------------- #
@@ -334,7 +448,8 @@ def _invoke_remote(export: dict, context_markdown: str,
 # --------------------------------------------------------------------------- #
 
 def generate_tender(export: dict, context_markdown: str,
-                    prompts: list[dict], documents: list[dict]) -> dict:
+                    prompts: list[dict], documents: list[dict],
+                    on_progress=None) -> dict:
     """Produce the pricing sheet + tender document. Uses the configured model
     when available, otherwise returns labelled placeholder artefacts."""
     if not settings.ai_configured():
@@ -344,4 +459,16 @@ def generate_tender(export: dict, context_markdown: str,
                    "tender produced. Set AI_PROVIDER and the connection details "
                    "to generate real documents.",
         )
+    provider = (settings.AI_PROVIDER or "").strip().lower()
+    if provider == "bedrock":
+        try:
+            return _invoke_bedrock(export, prompts, documents,
+                                   on_progress=on_progress)
+        except Exception as exc:  # noqa: BLE001 — degrade, don't dead-end
+            LOGGER.exception("Bedrock final pass failed; returning placeholders.")
+            return _placeholder_result(
+                export, context_markdown, prompts,
+                reason=f"AI final pass FAILED ({exc}) — placeholder pricing "
+                       "sheet and tender produced instead.",
+            )
     return _invoke_remote(export, context_markdown, prompts, documents)

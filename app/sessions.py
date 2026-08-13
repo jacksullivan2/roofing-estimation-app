@@ -70,6 +70,9 @@ class TenderJob:
     prompts_count: int = 0
     ai_used: bool = False
     notes: str = ""
+    # Token accounting from the Bedrock step-runner (empty when AI unused):
+    # {calls, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens}
+    usage: dict = field(default_factory=dict)
 
     # Outputs.
     pricing_bytes: Optional[bytes] = None

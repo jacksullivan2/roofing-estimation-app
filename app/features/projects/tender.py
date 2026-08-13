@@ -68,6 +68,10 @@ def _run(job_id: str) -> None:
         if lab["source"] != "project":
             job.notes = (job.notes + " " if job.notes else "") + lab["note"]
 
+        # Per-step progress from the AI step-runner lands on the status panel.
+        def on_progress(text: str) -> None:
+            job.step = text
+
         if job.kind == "draft":
             # Step 3a — draft pass: derive the pricing line items only. The
             # UI then walks them one by one collecting qualifications.
@@ -75,9 +79,11 @@ def _run(job_id: str) -> None:
             draft = ai_client.generate_draft_items(
                 export=export, context_markdown=context_markdown,
                 prompts=prompts, documents=documents,
+                on_progress=on_progress,
             )
             core.set_draft_items(job.project_id, draft.get("items", []))
             job.ai_used = bool(draft.get("ai_used"))
+            job.usage = draft.get("usage") or {}
             if draft.get("notes"):
                 job.notes = (job.notes + " " if job.notes else "") + draft["notes"]
             job.step = "Done"
@@ -92,10 +98,12 @@ def _run(job_id: str) -> None:
             context_markdown=context_markdown,
             prompts=prompts,
             documents=documents,
+            on_progress=on_progress,
         )
 
         # Step 4 — store outputs.
         job.ai_used = bool(result.get("ai_used"))
+        job.usage = result.get("usage") or {}
         if result.get("notes"):
             job.notes = (job.notes + " " if job.notes else "") + result["notes"]
         pricing = result["pricing"]
