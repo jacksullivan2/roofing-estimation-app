@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 
 from app import settings
@@ -81,28 +82,93 @@ def _model(step_no: str) -> str:
     return _model_for(step_no) or settings.OPENAI_DEFAULT_MODEL
 
 
+# --------------------------------------------------------------------------- #
+# Transient-failure handling                                                   #
+#                                                                              #
+# A 429 from OpenAI is one of two different problems wearing the same status   #
+# code:                                                                        #
+#   "Rate limit reached ... try again in 2.478s"  -> transient; the request    #
+#       fits the limit, this minute's budget is just spent. Waiting fixes it.  #
+#   "Request too large ... Limit 30000, Requested 49905" -> permanent; one     #
+#       request exceeds the whole per-minute allowance. Waiting never fixes    #
+#       it, so retrying only delays the inevitable error.                      #
+# Only the first is retried.                                                   #
+# --------------------------------------------------------------------------- #
+
+MAX_RETRIES = 2                 # retries AFTER the first attempt (3 calls max)
+_FALLBACK_RETRY_SECONDS = 5.0   # used when the API names no interval
+_MAX_RETRY_SECONDS = 30.0       # never sleep longer than this
+_PERMANENT_429_MARKERS = (
+    "request too large",
+    "reduce the length",
+    "context_length_exceeded",
+)
+
+
+def _is_retryable_429(body: str) -> bool:
+    """False when the 429 says the request itself is too big to ever fit."""
+    low = (body or "").lower()
+    return not any(m in low for m in _PERMANENT_429_MARKERS)
+
+
+def _retry_delay(resp, attempt: int) -> float:
+    """How long to wait before the next attempt. Prefers the Retry-After
+    header, then the 'try again in 2.478s' hint in the error body, then a
+    backing-off default. Always capped at _MAX_RETRY_SECONDS."""
+    header = (resp.headers.get("Retry-After") or "").strip()
+    if header:
+        try:
+            return min(float(header), _MAX_RETRY_SECONDS)
+        except ValueError:
+            pass
+    m = re.search(r"try again in\s+([\d.]+)\s*(ms|s)\b",
+                  resp.text or "", re.IGNORECASE)
+    if m:
+        secs = float(m.group(1))
+        if m.group(2).lower() == "ms":
+            secs /= 1000.0
+        return min(secs + 0.5, _MAX_RETRY_SECONDS)   # cushion for clock skew
+    return min(_FALLBACK_RETRY_SECONDS * (attempt + 1), _MAX_RETRY_SECONDS)
+
+
 def _chat(model: str, messages: list[dict]) -> dict:
-    """One chat-completions request. Returns the raw response JSON."""
+    """One chat-completions request, retried up to MAX_RETRIES times on a
+    transient 429. Returns the raw response JSON."""
     import requests
 
-    resp = requests.post(
-        _endpoint(),
-        headers={
-            "Authorization": f"Bearer {settings.AI_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        data=json.dumps({
-            "model": model,
-            "messages": messages,
-            "tools": _openai_tools(),
-            "max_completion_tokens": settings.AI_MAX_OUTPUT_TOKENS,
-        }),
-        timeout=settings.AI_TIMEOUT_SECONDS,
-    )
-    if resp.status_code != 200:
+    headers = {
+        "Authorization": f"Bearer {settings.AI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = json.dumps({
+        "model": model,
+        "messages": messages,
+        "tools": _openai_tools(),
+        "max_completion_tokens": settings.AI_MAX_OUTPUT_TOKENS,
+    })
+
+    for attempt in range(MAX_RETRIES + 1):
+        resp = requests.post(_endpoint(), headers=headers, data=payload,
+                             timeout=settings.AI_TIMEOUT_SECONDS)
+        if resp.status_code == 200:
+            return resp.json()
+
+        retries_left = MAX_RETRIES - attempt
+        if (resp.status_code == 429 and retries_left
+                and _is_retryable_429(resp.text)):
+            delay = _retry_delay(resp, attempt)
+            LOGGER.warning(
+                "OpenAI 429 rate limit — sleeping %.1fs then retrying "
+                "(%d retr%s left).",
+                delay, retries_left, "y" if retries_left == 1 else "ies")
+            time.sleep(delay)
+            continue
+
         raise WorkflowError(
             f"OpenAI API returned {resp.status_code}: {resp.text[:500]}")
-    return resp.json()
+
+    # Not reachable: the loop returns, continues, or raises.
+    raise WorkflowError("OpenAI request failed after retries.")
 
 
 def _normalise_usage(u: dict) -> dict:
