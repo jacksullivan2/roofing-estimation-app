@@ -9,6 +9,16 @@ import os
 import secrets
 from pathlib import Path
 
+# Load the app-folder .env (if present) so local non-Docker runs pick it up.
+# In Docker the same file is injected via docker-compose's env_file instead;
+# load_dotenv never overrides variables that are already set.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+except ImportError:  # pragma: no cover — python-dotenv is in requirements.txt
+    pass
+
 
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)

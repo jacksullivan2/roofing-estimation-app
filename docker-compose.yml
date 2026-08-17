@@ -5,6 +5,12 @@ services:
     container_name: roofing-estimator
     ports:
       - "8000:8000"
+    # Secrets/config live in the git-ignored .env file next to this compose
+    # file (AI_PROVIDER, AI_API_KEY, ...). required: false keeps a fresh
+    # clone working before .env has been created.
+    env_file:
+      - path: .env
+        required: false
     environment:
       # Uncomment to require a login. Leave unset for open local use.
       # ADMIN_PASSWORD: "change-me"
