@@ -188,6 +188,16 @@ def _normalise_usage(u: dict) -> dict:
 # One step = one function-calling conversation                                 #
 # --------------------------------------------------------------------------- #
 
+# How many byte-identical tool calls in a row count as "stuck".
+_MAX_IDENTICAL_TOOL_CALLS = 3
+
+
+def _preview(text: str, limit: int = 150) -> str:
+    """One-line, length-capped rendering of tool args / results for the log."""
+    s = " ".join((text or "").split())
+    return s if len(s) <= limit else s[:limit] + "…"
+
+
 def run_step(step_no: str, step_prompt: str, corpus: str, pid: str,
              project_data: dict, usage: Usage) -> list[str]:
     """Run one workflow step. Returns the project_data sections it wrote."""
@@ -206,6 +216,13 @@ def run_step(step_no: str, step_prompt: str, corpus: str, pid: str,
                      + "\n\nCarry out your step now.")},
     ]
     owned: list[str] = []
+
+    # Stuck-loop guard. A model that gets an ERROR back from a tool sometimes
+    # re-sends the byte-identical call forever; without this the step burns
+    # every remaining turn and dies with the unhelpful "exceeded
+    # AI_MAX_TOOL_TURNS", hiding the error that actually caused it.
+    last_sig: str | None = None
+    repeats = 0
 
     for turn in range(settings.AI_MAX_TOOL_TURNS):
         resp = _chat(model, messages)
@@ -229,13 +246,31 @@ def run_step(step_no: str, step_prompt: str, corpus: str, pid: str,
 
         for tc in tool_calls:
             fn = tc.get("function") or {}
+            name = fn.get("name", "")
+            raw_args = fn.get("arguments") or "{}"
             try:
-                args = json.loads(fn.get("arguments") or "{}")
+                args = json.loads(raw_args)
             except json.JSONDecodeError as exc:
                 out = f"ERROR: arguments were not valid JSON — {exc}. Retry."
             else:
-                out = _execute_tool(fn.get("name", ""), args, pid,
-                                    project_data, owned)
+                out = _execute_tool(name, args, pid, project_data, owned)
+
+            # Visibility: what the model asked for, and what it got back.
+            LOGGER.info("step %s turn %d tool=%s args=%s -> %s",
+                        step_no, turn + 1, name or "(none)",
+                        _preview(raw_args), _preview(out))
+
+            sig = f"{name}|{raw_args}"
+            if sig == last_sig:
+                repeats += 1
+            else:
+                last_sig, repeats = sig, 0
+            if repeats + 1 >= _MAX_IDENTICAL_TOOL_CALLS:
+                raise WorkflowError(
+                    f"Step {step_no} is stuck: the model sent the same "
+                    f"{name or 'tool'} call {repeats + 1} times in a row. "
+                    f"Last result was: {_preview(out, 300)}")
+
             messages.append({"role": "tool",
                              "tool_call_id": tc.get("id", ""),
                              "content": out[:100_000]})
