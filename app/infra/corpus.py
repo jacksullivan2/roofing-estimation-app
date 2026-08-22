@@ -36,7 +36,7 @@ LOGGER = logging.getLogger(__name__)
 CORPUS_FILENAME = "_document_corpus.txt"
 
 # Bump when extraction logic changes so stale stored corpora are rebuilt.
-EXTRACTOR_VERSION = "1"
+EXTRACTOR_VERSION = "2"   # v2: DOCUMENT MANIFEST header prepended to corpus
 
 _XLSX_EXTS = {".xlsx", ".xlsm", ".xltx"}
 _TEXT_EXTS = {".txt", ".csv", ".md", ".rtf"}
@@ -130,16 +130,71 @@ def _corpus_hash(docs: list[dict], char_cap: int) -> str:
     return h.hexdigest()[:32]
 
 
+def _manifest(extracted: list[tuple[str, str]]) -> str:
+    """The authoritative list of files the model may read. Without this the
+    model has no way to know which filenames exist, and (observed in real
+    runs) guesses names out of the step prompts' examples instead."""
+    lines = [
+        f"## DOCUMENT MANIFEST — {len(extracted)} file(s). These are the ONLY "
+        "documents that exist for this project.",
+        "Call read_document with a filename EXACTLY as listed below. Any "
+        "filename not on this list does not exist — never guess or invent "
+        "filenames.",
+        "",
+    ]
+    for i, (name, text) in enumerate(extracted, start=1):
+        if text.startswith("[image file"):
+            note = "image — no extractable text"
+        elif text.startswith("[extraction failed"):
+            note = "EXTRACTION FAILED — contents unavailable"
+        elif text.startswith("["):
+            note = text.strip("[]")[:70]
+        else:
+            note = f"{len(text):,} chars extracted"
+        lines.append(f"{i:3d}. {name}  ({note})")
+    return "\n".join(lines)
+
+
 def _build(docs: list[dict], char_cap: int) -> str:
-    parts: list[str] = []
-    for d in sorted(docs, key=lambda d: d["filename"]):
-        text = extract_text(d["filename"], d["bytes"])
+    extracted = [(d["filename"], extract_text(d["filename"], d["bytes"]))
+                 for d in sorted(docs, key=lambda d: d["filename"])]
+    if not extracted:
+        return "[no project documents uploaded]"
+
+    parts: list[str] = [_manifest(extracted)]
+    for name, text in extracted:
         if len(text) > char_cap:
             text = (text[:char_cap]
                     + f"\n[…document truncated at {char_cap} characters — "
                       "use the read_document tool for the full text]")
-        parts.append(f"===== FILE: {d['filename']} =====\n{text}")
-    return "\n\n".join(parts) if parts else "[no project documents uploaded]"
+        parts.append(f"===== FILE: {name} =====\n{text}")
+    return "\n\n".join(parts)
+
+
+# In-memory registry of the documents handed to the current workflow run,
+# keyed by project id and refreshed on every run. Some documents reach the
+# model without living in the project's stored documents folder — the shared
+# labour-rates file and the FileTypeMap are injected by tender.py at run
+# time — and read_document must still work for them, so full_document_text
+# falls back to this registry when the repo lookup misses.
+_RUN_DOCS: dict[str, dict[str, bytes]] = {}
+
+
+def register_run_documents(pid: str, documents: list[dict]) -> None:
+    _RUN_DOCS[pid] = {d["filename"]: d["bytes"] for d in documents}
+
+
+def _lookup_run_doc(pid: str, filename: str) -> tuple[str, bytes] | None:
+    docs = _RUN_DOCS.get(pid) or {}
+    if filename in docs:
+        return filename, docs[filename]
+    # Tolerate a folder prefix ("Profix Projects/FileTypeMap.xlsx") or wrong
+    # case: match on the case-folded basename.
+    want = Path(filename).name.casefold()
+    for name, data in docs.items():
+        if Path(name).name.casefold() == want:
+            return name, data
+    return None
 
 
 def get_or_build(pid: str, documents: list[dict],
@@ -156,6 +211,8 @@ def get_or_build(pid: str, documents: list[dict],
     docs = [d for d in documents
             if d["filename"] not in generated_names
             and d["filename"] != CORPUS_FILENAME]
+
+    register_run_documents(pid, docs)
 
     char_cap = settings.AI_CORPUS_DOC_CHAR_CAP
     want_hash = _corpus_hash(docs, char_cap)
@@ -177,10 +234,21 @@ def get_or_build(pid: str, documents: list[dict],
 
 
 def full_document_text(pid: str, filename: str) -> str:
-    """Uncapped extraction of one document — backs the read_document tool."""
+    """Uncapped extraction of one document — backs the read_document tool.
+
+    Looks in the project's stored documents first, then in the current run's
+    injected documents (shared labour rates, FileTypeMap), tolerating folder
+    prefixes and case differences on the fallback."""
     from app.features.projects import repo as _repo  # lazy — avoid cycles
 
+    name = filename
     data = _repo.get_repo().read_document(pid, filename)
     if data is None:
-        return f"[document not found: {filename}]"
-    return extract_text(filename, data)
+        hit = _lookup_run_doc(pid, filename)
+        if hit:
+            name, data = hit
+    if data is None:
+        return (f"[document not found: {filename}. The DOCUMENT MANIFEST at "
+                "the top of the corpus lists every filename that exists — "
+                "use one of those exactly.]")
+    return extract_text(name, data)

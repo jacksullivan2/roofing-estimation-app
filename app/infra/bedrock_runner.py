@@ -484,6 +484,11 @@ def run_workflow(pass_: str, export: dict, prompts: list[dict],
         started = time.time()
         owned = run_step(client, no, prompt["text"], corpus, pid,
                          project_data, usage)
+        if not owned:
+            raise WorkflowError(
+                f"Step {no} ({prompt['name']}) completed without writing any "
+                "section to project_data.yaml — failing the run instead of "
+                "continuing with that step's output silently missing.")
         project_data.setdefault("workflow_run", {})[no] = {
             "prompt_file": prompt["name"],
             "sections_written": owned,

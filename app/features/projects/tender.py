@@ -22,7 +22,7 @@ import time
 
 from app import sessions
 from app.infra import ai_client, s3_client
-from . import core, labour_rates
+from . import core, file_type_map, labour_rates
 
 LOGGER = logging.getLogger(__name__)
 
@@ -67,6 +67,13 @@ def _run(job_id: str) -> None:
                                   "filename": lab["filename"]}
         if lab["source"] != "project":
             job.notes = (job.notes + " " if job.notes else "") + lab["note"]
+
+        # Reference library: step 02 wants the FileTypeMap. When the project
+        # didn't upload one, inject the shared copy from _file_type_map/.
+        job.step = "Checking file type map"
+        ftm = file_type_map.resolve(rec, documents)
+        if ftm["source"] == "library":
+            job.notes = (job.notes + " " if job.notes else "") + ftm["note"]
 
         # Per-step progress from the AI step-runner lands on the status panel.
         def on_progress(text: str) -> None:
