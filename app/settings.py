@@ -108,6 +108,23 @@ AI_MAX_TOOL_TURNS = int(os.getenv("AI_MAX_TOOL_TURNS", "12"))
 # Max output tokens per model call.
 AI_MAX_OUTPUT_TOKENS = int(os.getenv("AI_MAX_OUTPUT_TOKENS", "8192"))
 
+# Whole-step retries: when a step dies of a STOCHASTIC failure (stuck loop
+# resending the same broken tool call, ran out of tool turns, or finished
+# without writing), restart that step once with a fresh conversation. The
+# same step usually succeeds on a clean second attempt.
+AI_STEP_RETRIES = int(os.getenv("AI_STEP_RETRIES", "1"))
+
+# Retries after the first attempt on a TRANSIENT 429 rate limit (the
+# "try again in Ns" kind; request-too-large 429s are never retried). At low
+# OpenAI tiers transient 429s arrive in bursts, so the default is generous.
+AI_RATE_LIMIT_RETRIES = int(os.getenv("AI_RATE_LIMIT_RETRIES", "4"))
+
+# Character cap on one read_document tool result. The full text of every
+# document a step reads is echoed back into EVERY later turn of that step's
+# conversation, so an uncapped read of a 150k-char price list makes each
+# subsequent request enormous and burns the per-minute token budget.
+AI_READ_DOC_CHAR_CAP = int(os.getenv("AI_READ_DOC_CHAR_CAP", "40000"))
+
 # Per-document character cap inside the cached corpus (full text stays
 # available to the model via the read_document tool).
 AI_CORPUS_DOC_CHAR_CAP = int(os.getenv("AI_CORPUS_DOC_CHAR_CAP", "60000"))

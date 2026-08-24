@@ -41,6 +41,7 @@ from app.infra.bedrock_runner import (  # provider-neutral, reused as-is
     _load_project_data,
     _model_for,
     _save_project_data,
+    _seed_project_data,
     _should_skip,
     _yaml_snapshot,
     extract_draft_items,     # noqa: F401 — re-exported so callers can use
@@ -95,9 +96,8 @@ def _model(step_no: str) -> str:
 # Only the first is retried.                                                   #
 # --------------------------------------------------------------------------- #
 
-MAX_RETRIES = 2                 # retries AFTER the first attempt (3 calls max)
 _FALLBACK_RETRY_SECONDS = 5.0   # used when the API names no interval
-_MAX_RETRY_SECONDS = 30.0       # never sleep longer than this
+_MAX_RETRY_SECONDS = 60.0       # never sleep longer than this
 _PERMANENT_429_MARKERS = (
     "request too large",
     "reduce the length",
@@ -147,13 +147,31 @@ def _chat(model: str, messages: list[dict]) -> dict:
         "max_completion_tokens": settings.AI_MAX_OUTPUT_TOKENS,
     })
 
-    for attempt in range(MAX_RETRIES + 1):
-        resp = requests.post(_endpoint(), headers=headers, data=payload,
-                             timeout=settings.AI_TIMEOUT_SECONDS)
+    max_retries = settings.AI_RATE_LIMIT_RETRIES
+    for attempt in range(max_retries + 1):
+        try:
+            resp = requests.post(_endpoint(), headers=headers, data=payload,
+                                 timeout=settings.AI_TIMEOUT_SECONDS)
+        except requests.RequestException as exc:
+            # The request died before any HTTP response existed: TLS hiccup
+            # (e.g. SSLV3_ALERT_BAD_RECORD_MAC), connection reset, timeout.
+            # Transient network faults — retry like a transient 429.
+            net_left = max_retries - attempt
+            if net_left:
+                delay = min(2.0 * (attempt + 1), _MAX_RETRY_SECONDS)
+                LOGGER.warning(
+                    "OpenAI request failed before a response (%s: %s) — "
+                    "sleeping %.1fs then retrying (%d retr%s left).",
+                    exc.__class__.__name__, str(exc)[:150], delay,
+                    net_left, "y" if net_left == 1 else "ies")
+                time.sleep(delay)
+                continue
+            raise WorkflowError(
+                f"OpenAI request failed after retries: {exc}") from exc
         if resp.status_code == 200:
             return resp.json()
 
-        retries_left = MAX_RETRIES - attempt
+        retries_left = max_retries - attempt
         if (resp.status_code == 429 and retries_left
                 and _is_retryable_429(resp.text)):
             delay = _retry_delay(resp, attempt)
@@ -191,6 +209,18 @@ def _normalise_usage(u: dict) -> dict:
 # How many byte-identical tool calls in a row count as "stuck".
 _MAX_IDENTICAL_TOOL_CALLS = 3
 
+# A model sometimes ends its turn with prose instead of calling write_section.
+# Before treating that as a failed step, remind it what finishing means — up
+# to this many times.
+_MAX_NO_WRITE_NUDGES = 2
+_NO_WRITE_NUDGE = (
+    "You ended your turn without recording any output. Your step is not "
+    "complete until you call the write_section tool with the top-level key "
+    "your step prompt says you own and the complete YAML content for it. Do "
+    "that now — do not reply with prose. If you genuinely have nothing to "
+    "record, write your owned section anyway with a status field explaining "
+    "why (e.g. status: skipped, reason: ...).")
+
 
 def _preview(text: str, limit: int = 150) -> str:
     """One-line, length-capped rendering of tool args / results for the log."""
@@ -223,6 +253,7 @@ def run_step(step_no: str, step_prompt: str, corpus: str, pid: str,
     # AI_MAX_TOOL_TURNS", hiding the error that actually caused it.
     last_sig: str | None = None
     repeats = 0
+    nudges = 0
 
     for turn in range(settings.AI_MAX_TOOL_TURNS):
         resp = _chat(model, messages)
@@ -242,7 +273,15 @@ def run_step(step_no: str, step_prompt: str, corpus: str, pid: str,
                          **({"tool_calls": tool_calls} if tool_calls else {})})
 
         if choice.get("finish_reason") != "tool_calls" or not tool_calls:
-            return owned  # step finished; its write_section calls are applied
+            if owned or nudges >= _MAX_NO_WRITE_NUDGES:
+                return owned  # step finished; its write_section calls are applied
+            nudges += 1
+            LOGGER.warning(
+                "step %s turn %d ended without writing a section — nudging "
+                "(%d/%d). Model said: %s", step_no, turn + 1, nudges,
+                _MAX_NO_WRITE_NUDGES, _preview(msg.get("content") or "", 300))
+            messages.append({"role": "user", "content": _NO_WRITE_NUDGE})
+            continue
 
         for tc in tool_calls:
             fn = tc.get("function") or {}
@@ -305,6 +344,7 @@ def run_workflow(pass_: str, export: dict, prompts: list[dict],
             "_agent_prompts folder / S3 prefix.")
 
     project_data = {} if pass_ == "draft" else _load_project_data(pid)
+    _seed_project_data(pass_, export, project_data)
     if pass_ == "final":
         if not project_data:
             steps = [s for s in DRAFT_STEPS if s in by_step] + steps
@@ -332,8 +372,35 @@ def run_workflow(pass_: str, export: dict, prompts: list[dict],
             continue
         progress(f"AI step {no} — {prompt['name']} (OpenAI)")
         started = time.time()
-        owned = run_step(no, prompt["text"], corpus, pid, project_data, usage)
-        if not owned:
+        attempts = 0
+        while True:
+            try:
+                owned = run_step(no, prompt["text"], corpus, pid,
+                                 project_data, usage)
+            except WorkflowError as exc:
+                msg = str(exc)
+                stochastic = ("is stuck" in msg
+                              or "exceeded AI_MAX_TOOL_TURNS" in msg)
+                if stochastic and attempts < settings.AI_STEP_RETRIES:
+                    attempts += 1
+                    LOGGER.warning(
+                        "Step %s failed (%s) — restarting the step with a "
+                        "fresh conversation (attempt %d of %d).",
+                        no, _preview(msg, 200), attempts + 1,
+                        settings.AI_STEP_RETRIES + 1)
+                    progress(f"AI step {no} — retry {attempts + 1} (OpenAI)")
+                    continue
+                raise
+            if owned:
+                break
+            if attempts < settings.AI_STEP_RETRIES:
+                attempts += 1
+                LOGGER.warning(
+                    "Step %s wrote nothing — restarting the step with a "
+                    "fresh conversation (attempt %d of %d).",
+                    no, attempts + 1, settings.AI_STEP_RETRIES + 1)
+                progress(f"AI step {no} — retry {attempts + 1} (OpenAI)")
+                continue
             raise WorkflowError(
                 f"Step {no} ({prompt['name']}) completed without writing any "
                 "section to project_data.yaml — failing the run instead of "

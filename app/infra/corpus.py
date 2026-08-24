@@ -36,10 +36,10 @@ LOGGER = logging.getLogger(__name__)
 CORPUS_FILENAME = "_document_corpus.txt"
 
 # Bump when extraction logic changes so stale stored corpora are rebuilt.
-EXTRACTOR_VERSION = "2"   # v2: DOCUMENT MANIFEST header prepended to corpus
+EXTRACTOR_VERSION = "3"   # v2: manifest header; v3: yaml/json extract as text
 
 _XLSX_EXTS = {".xlsx", ".xlsm", ".xltx"}
-_TEXT_EXTS = {".txt", ".csv", ".md", ".rtf"}
+_TEXT_EXTS = {".txt", ".csv", ".md", ".rtf", ".yaml", ".yml", ".json"}
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".heic"}
 
 
@@ -120,17 +120,21 @@ def _from_xlsx(data: bytes, max_rows_per_sheet: int = 400) -> str:
 # Corpus assembly                                                             #
 # --------------------------------------------------------------------------- #
 
-def _corpus_hash(docs: list[dict], char_cap: int) -> str:
+def _corpus_hash(docs: list[dict], char_cap: int,
+                 generated_names: set[str] | None = None) -> str:
     """Content hash over the inputs that determine the corpus bytes."""
     h = hashlib.sha256()
     h.update(f"v{EXTRACTOR_VERSION}|cap{char_cap}".encode())
+    for name in sorted(generated_names or ()):
+        h.update(f"gen:{name}".encode("utf-8", errors="replace"))
     for d in sorted(docs, key=lambda d: d["filename"]):
         h.update(d["filename"].encode("utf-8", errors="replace"))
         h.update(hashlib.sha256(d["bytes"]).digest())
     return h.hexdigest()[:32]
 
 
-def _manifest(extracted: list[tuple[str, str]]) -> str:
+def _manifest(extracted: list[tuple[str, str]],
+              generated_names: set[str] | None = None) -> str:
     """The authoritative list of files the model may read. Without this the
     model has no way to know which filenames exist, and (observed in real
     runs) guesses names out of the step prompts' examples instead."""
@@ -152,16 +156,24 @@ def _manifest(extracted: list[tuple[str, str]]) -> str:
         else:
             note = f"{len(text):,} chars extracted"
         lines.append(f"{i:3d}. {name}  ({note})")
+    if generated_names:
+        lines.append("")
+        lines.append("App-generated documents, not shown below but readable "
+                     "with read_document (the project intake/context lives "
+                     "here — read it before inventing project metadata):")
+        for name in sorted(generated_names):
+            lines.append(f"  - {name}")
     return "\n".join(lines)
 
 
-def _build(docs: list[dict], char_cap: int) -> str:
+def _build(docs: list[dict], char_cap: int,
+           generated_names: set[str] | None = None) -> str:
     extracted = [(d["filename"], extract_text(d["filename"], d["bytes"]))
                  for d in sorted(docs, key=lambda d: d["filename"])]
     if not extracted:
         return "[no project documents uploaded]"
 
-    parts: list[str] = [_manifest(extracted)]
+    parts: list[str] = [_manifest(extracted, generated_names)]
     for name, text in extracted:
         if len(text) > char_cap:
             text = (text[:char_cap]
@@ -194,6 +206,15 @@ def _lookup_run_doc(pid: str, filename: str) -> tuple[str, bytes] | None:
     for name, data in docs.items():
         if Path(name).name.casefold() == want:
             return name, data
+    # Last resort: ignore punctuation entirely, so "[Shared labour rates] X"
+    # is still found when the model asks for "Shared labour rates X".
+    def _squash(s: str) -> str:
+        return "".join(c for c in s.casefold() if c.isalnum())
+    want_sq = _squash(Path(filename).name)
+    if want_sq:
+        for name, data in docs.items():
+            if _squash(Path(name).name) == want_sq:
+                return name, data
     return None
 
 
@@ -212,10 +233,12 @@ def get_or_build(pid: str, documents: list[dict],
             if d["filename"] not in generated_names
             and d["filename"] != CORPUS_FILENAME]
 
-    register_run_documents(pid, docs)
+    # Register the FULL payload (generated docs included) so read_document's
+    # fallback can serve everything the model was handed.
+    register_run_documents(pid, documents)
 
     char_cap = settings.AI_CORPUS_DOC_CHAR_CAP
-    want_hash = _corpus_hash(docs, char_cap)
+    want_hash = _corpus_hash(docs, char_cap, generated_names)
     header = f"# corpus {want_hash}\n"
 
     repo = _repo.get_repo()
@@ -226,7 +249,7 @@ def get_or_build(pid: str, documents: list[dict],
             LOGGER.info("Corpus re-used for %s (hash %s).", pid, want_hash)
             return text
 
-    body = header + _build(docs, char_cap)
+    body = header + _build(docs, char_cap, generated_names)
     repo.write_document(pid, CORPUS_FILENAME, body.encode("utf-8"))
     LOGGER.info("Corpus built for %s: %d docs, %d chars (hash %s).",
                 pid, len(docs), len(body), want_hash)

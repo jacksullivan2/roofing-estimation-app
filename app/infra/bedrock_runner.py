@@ -207,6 +207,36 @@ def index_prompts(prompts: list[dict]) -> dict[str, dict]:
 # project_data.yaml persistence                                               #
 # --------------------------------------------------------------------------- #
 
+def _seed_project_data(pass_: str, export: dict, project_data: dict) -> None:
+    """Facts the app already knows are written by the app, never the model.
+
+    Without this, step 01 has been observed inventing a project identity out
+    of its prompt's worked example (id p-cranley-sw7, client "Rosewood Ltd")
+    and every later step inherited it. Models also have no clock, so real
+    run timestamps are stamped here for the steps to reference.
+    """
+    from datetime import datetime, timezone
+
+    proj = export.get("project") or {}
+    project_data["project"] = {
+        "id": proj.get("id"),
+        "name": proj.get("name"),
+        "client": proj.get("client"),
+        "reference": proj.get("reference"),
+        "markup_pct": proj.get("markup_pct"),
+        "waste_pct": proj.get("waste_pct"),
+        "seeded_by": "app",
+        "note": ("Written by the application from the project record — "
+                 "authoritative. Do not rewrite; extra extracted metadata "
+                 "goes under 'project_extra'."),
+    }
+    project_data.setdefault("run_info", {})[pass_] = {
+        "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "note": ("Real UTC timestamp stamped by the application. Use it for "
+                 "any *_at / generated_at fields instead of inventing dates."),
+    }
+
+
 def _load_project_data(pid: str) -> dict:
     import yaml
     from app.features.projects import repo as _repo
@@ -314,20 +344,87 @@ def _strip_cache_points(messages: list[dict]) -> None:
         m["content"] = [b for b in m.get("content", []) if "cachePoint" not in b]
 
 
+def _error_window(raw: str, pos: int, width: int = 80) -> str:
+    """The text surrounding an error position, one line, with a marker at the
+    exact spot — so the model repairs by sight instead of from memory."""
+    before = " ".join(raw[max(0, pos - width):pos].split())
+    after = " ".join(raw[pos:pos + width].split())
+    return f"...{before} >>>ERROR IS HERE>>> {after}..."
+
+
+def _parse_section_content(raw: str) -> tuple:
+    """Parse write_section content. JSON-looking content goes through the
+    strict JSON parser FIRST (precise errors, none of YAML's flow-parsing
+    quirks); everything else through YAML. Returns (value, None) on success
+    or (None, error_message) on failure."""
+    import yaml
+
+    if raw.lstrip().startswith(("{", "[")):
+        try:
+            return json.loads(raw), None
+        except json.JSONDecodeError as exc:
+            return None, (
+                f"ERROR: content looks like JSON but is not valid JSON — "
+                f"{exc.msg} at position {exc.pos}. The broken spot is: "
+                f"{_error_window(raw, exc.pos)} Fix exactly that spot and "
+                "resend the COMPLETE content.")
+    try:
+        return yaml.safe_load(raw), None
+    except yaml.YAMLError as exc:
+        pos = getattr(getattr(exc, "problem_mark", None), "index", None)
+        window = f" The broken spot is: {_error_window(raw, pos)}" \
+            if pos is not None else ""
+        hint = ("Your content ended mid-document (unclosed brackets or "
+                "quotes) — you stopped before finishing it. Resend the "
+                "COMPLETE content; if it is long, shorten field values but "
+                "never stop early."
+                if "stream end" in str(exc) else
+                "Do NOT resend the same text. Resend the ENTIRE section "
+                "content as strict JSON (one object, double-quoted keys, no "
+                "comments) — JSON is accepted here and is easier to get "
+                "right than indented YAML.")
+        return None, (f"ERROR: content_yaml is not valid YAML — {exc}."
+                      f"{window} {hint}")
+
+
 def _execute_tool(name: str, tool_input: dict, pid: str,
                   project_data: dict, owned: list[str]) -> str:
     if name == "read_document":
-        return corpus_mod.full_document_text(pid, tool_input.get("filename", ""))
+        text = corpus_mod.full_document_text(pid, tool_input.get("filename", ""))
+        cap = settings.AI_READ_DOC_CHAR_CAP
+        if cap and len(text) > cap:
+            text = (text[:cap]
+                    + f"\n[…truncated at {cap:,} characters to protect the "
+                      "rate-limit budget. Work from what is shown; the "
+                      "beginning of a document carries its structure.]")
+        return text
     if name == "write_section":
-        import yaml
-
         section = (tool_input.get("section") or "").strip()
         if not section:
             return "ERROR: section name is required."
-        try:
-            value = yaml.safe_load(tool_input.get("content_yaml") or "")
-        except yaml.YAMLError as exc:
-            return f"ERROR: content_yaml is not valid YAML — {exc}. Fix and retry."
+        value, parse_error = _parse_section_content(
+            tool_input.get("content_yaml") or "")
+        if parse_error:
+            return parse_error
+        if (section == "project"
+                and isinstance(project_data.get("project"), dict)
+                and project_data["project"].get("seeded_by") == "app"):
+            return ("ERROR: not applied — section 'project' was seeded by the "
+                    "application from the real project record and is "
+                    "authoritative. Do not rewrite it. Put any additional "
+                    "project metadata you extracted under 'project_extra'.")
+        if section in project_data:
+            old_size = len(str(project_data[section]))
+            new_size = len(str(value))
+            if old_size >= 1000 and new_size < old_size // 4:
+                return (f"ERROR: not applied — this would replace section "
+                        f"'{section}' ({old_size} chars) with only {new_size} "
+                        "chars. write_section REPLACES the entire section; a "
+                        "small write here would destroy what is already "
+                        "stored. If you are adding metadata or a supplement, "
+                        "write it under its own key (e.g. 'extraction_meta'); "
+                        "if you truly mean to rewrite this section, resend the "
+                        "COMPLETE content including everything already there.")
         project_data[section] = value
         if section not in owned:
             owned.append(section)
@@ -447,6 +544,7 @@ def run_workflow(pass_: str, export: dict, prompts: list[dict],
             "_agent_prompts folder / S3 prefix.")
 
     project_data = {} if pass_ == "draft" else _load_project_data(pid)
+    _seed_project_data(pass_, export, project_data)
     if pass_ == "final":
         if not project_data:
             # Final requested with no draft on file — run the full pipeline.
@@ -463,7 +561,15 @@ def run_workflow(pass_: str, export: dict, prompts: list[dict],
                  if d.get("generated")}
     corpus = corpus_mod.get_or_build(pid, documents, generated)
 
-    kwargs = {}
+    # Reasoning models can legitimately take >60s per turn; botocore's
+    # default 60s read timeout aborts mid-generation and silently retries,
+    # which is how a run stalls for minutes then dies with TimeoutError.
+    from botocore.config import Config as _BotoConfig
+    kwargs = {"config": _BotoConfig(
+        connect_timeout=10,
+        read_timeout=settings.AI_TIMEOUT_SECONDS,
+        retries={"max_attempts": 4, "mode": "adaptive"},
+    )}
     if settings.AWS_REGION:
         kwargs["region_name"] = settings.AWS_REGION
     client = boto3.client("bedrock-runtime", **kwargs)
