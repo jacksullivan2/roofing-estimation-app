@@ -445,6 +445,7 @@ def run_step(client, step_no: str, step_prompt: str, corpus: str,
     snapshot = _yaml_snapshot(project_data)
     messages = [_first_message(step_prompt, snapshot, cache)]
     owned: list[str] = []
+    truncations = 0
 
     for turn in range(settings.AI_MAX_TOOL_TURNS):
         kwargs = {
@@ -480,7 +481,33 @@ def run_step(client, step_no: str, step_prompt: str, corpus: str,
         msg = resp["output"]["message"]
         messages.append(msg)
 
-        if resp.get("stopReason") != "tool_use":
+        stop = resp.get("stopReason")
+        if stop == "max_tokens":
+            # The response was cut off by the output-token ceiling, so any
+            # in-flight tool call was discarded. Without this branch the step
+            # would "finish" silently with nothing written.
+            if truncations >= 2:
+                raise WorkflowError(
+                    f"Step {step_no}: output truncated by the "
+                    f"{settings.AI_MAX_OUTPUT_TOKENS}-token output limit "
+                    "3 times in a row — raise AI_MAX_OUTPUT_TOKENS in .env "
+                    "or make this step's output smaller.")
+            truncations += 1
+            LOGGER.warning(
+                "step %s turn %d: output truncated at %s tokens — telling "
+                "the model to resend more concisely (%d/2).",
+                step_no, turn + 1, settings.AI_MAX_OUTPUT_TOKENS, truncations)
+            messages.append({"role": "user", "content": [{"text": (
+                "Your previous response was CUT OFF by the maximum output "
+                "length before your tool call completed, so NOTHING was "
+                "saved. Re-issue the write_section call now with the same "
+                "structure but more concise content: shorten description/"
+                "detail field values, drop repetition, keep every item and "
+                "every required key. Do not apologise or explain — just "
+                "make the tool call.")}]})
+            continue
+
+        if stop != "tool_use":
             return owned  # step finished (its write_section calls are applied)
 
         results = []
