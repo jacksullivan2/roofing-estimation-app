@@ -497,14 +497,31 @@ def run_step(client, step_no: str, step_prompt: str, corpus: str,
                 "step %s turn %d: output truncated at %s tokens — telling "
                 "the model to resend more concisely (%d/2).",
                 step_no, turn + 1, settings.AI_MAX_OUTPUT_TOKENS, truncations)
-            messages.append({"role": "user", "content": [{"text": (
-                "Your previous response was CUT OFF by the maximum output "
-                "length before your tool call completed, so NOTHING was "
+            nudge = (
+                "ERROR: your response was CUT OFF by the maximum output "
+                "length before this tool call completed, so NOTHING was "
                 "saved. Re-issue the write_section call now with the same "
                 "structure but more concise content: shorten description/"
                 "detail field values, drop repetition, keep every item and "
                 "every required key. Do not apologise or explain — just "
-                "make the tool call.")}]})
+                "make the tool call.")
+            # The truncated assistant message may still open a tool_use
+            # block; Bedrock REQUIRES the next user message to answer every
+            # tool_use id with a toolResult, so deliver the nudge as error
+            # results rather than plain text (plain text here raises
+            # ValidationException: "tool_use ids were found without
+            # tool_result blocks immediately after").
+            orphans = [b["toolUse"] for b in msg.get("content", [])
+                       if b.get("toolUse")]
+            if orphans:
+                content = [{"toolResult": {
+                    "toolUseId": tu["toolUseId"],
+                    "content": [{"text": nudge}],
+                    "status": "error",
+                }} for tu in orphans]
+            else:
+                content = [{"text": nudge}]
+            messages.append({"role": "user", "content": content})
             continue
 
         if stop != "tool_use":
