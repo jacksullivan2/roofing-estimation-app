@@ -36,6 +36,7 @@ A typical project's manufacturer pricing folder (named `Manufactuer Products and
 6. **Warranty period drives coverage.** Pro-Cold top coat is 0.5 / 0.75 / 1.0 ltr/m² for a 10 / 15 / 20-year warranty respectively. Pro-Felt capsheet "Ultima-Plus" gives 20/25-year systems depending on number of underlay layers. Always tie the warranty to the chosen coverage rate.
 7. **Don't invent.** If a product appears in the System Spec (S_) but has no price in any Q_/OS_ file, output it with `unit_price_gbp: null` and add it to `to_confirm` — the procurement step needs to chase it.
 8. **Output is written to one consolidated project document**, not returned as a chat response — see *"Output — write to the project's single consolidated document"* below. The downstream pricing agent reads only this file.
+9. **Scope filter — extract only what this project can use.** Bespoke Q_ quotes and S_ system specs are project-specific: extract those in full. But **catalogue-style sources** — trade price lists, OS_ open schedules, pricebooks covering a manufacturer's whole range — must NOT be transcribed wholesale. From a catalogue, extract ONLY products that (a) belong to the system(s) named in `project_context`, the S_ spec or the statement of works, (b) are named or clearly implied by a work item in the statement of works, or (c) are the standard ancillaries of the chosen system (its primer, catalyst, matting, trims, sealants). Everything else in the catalogue is out of scope: do not list it and do not summarise it. If a product family's relevance is uncertain, include its single most relevant line and note the uncertainty in `extraction_meta.assumptions`. Calibration: a typical project needs **15–40 priced line items, not hundreds** — if your extract is heading past ~50 items, you are over-extracting from a catalogue.
 
 ## What the Pricing Sheet needs — and where it comes from
 
@@ -76,7 +77,7 @@ Every Profix pricing-sheet materials row is built from these inputs. Map your ou
 - BBA certificate number and expiry if referenced.
 
 ### C. Priced line items (the main payload)
-For every priced product, capture an entry of this shape:
+For every **in-scope** priced product (see rule 9 — *Scope filter*), capture an entry of this shape:
 
 ```yaml
 - code: "<manufacturer SKU, e.g. ACTF4S03-->"      # null if not given
