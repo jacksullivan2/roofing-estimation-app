@@ -25,6 +25,10 @@ A project's labour-rate inputs can sit in any of these places — never assume a
 
 ## Rules of engagement
 
+**Scope filter — rates this project can use.** Shared rate workbooks (e.g. "[Shared labour rates] …", multi-trade rate cards) cover every trade the contractor employs. Do NOT transcribe them wholesale: extract ONLY rate lines for trades and tasks that appear in this project's statement of works (check `statement_of_works.items`). A felt-and-asphalt job does not need the leadwork, slating or tiling sheets. If a whole sheet is irrelevant, note it in one line under `extraction_meta` and move on. Calibration: a typical project needs 10–30 rate lines, not hundreds.
+
+**Size discipline (hard limit).** Your section is working data for downstream pricing steps, not an archive. The app REFUSES any section larger than 40,000 characters, and a healthy extract is well under 25,000. Stay concise: keep verbatim text only where a rule explicitly demands it (refs, product names, coverage rates, prices); everywhere else paraphrase tightly. Never copy a document wholesale — extract only what this project's scope of works actually needs.
+
 0. **Read `project_context.answers[]` FIRST — estimator wins on conflict.** Before reading any rate card, read the `project_context:` block written by step 01. The estimator's answers — especially `COM-02` "labour rate card / gang composition", `COM-03` "overhead and margin/markup %", and `PRJ-05` "wastage factor" — outrank the rate-card baseline. If the rate card says strip felt £20/m² but the estimator answered `COM-02` with "Steve Rawls @ £35/m² strip — confirmed for this project", you extract the rate card for audit but mark the £35/m² as the authoritative value via a `project_context_override` block on the gang's strip rate. Log the conflict in `extraction_meta.conflicts` with `resolution: estimator_wins`. **Never silently overwrite the rate-card value** — preserve it for audit and surface the conflict.
 
 1. **Two pricing surfaces, never confuse them.**

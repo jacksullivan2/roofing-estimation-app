@@ -26,6 +26,8 @@ A typical project's manufacturer pricing folder (named `Manufactuer Products and
 
 ## Rules of engagement
 
+**Size discipline (hard limit).** Your section is working data for downstream pricing steps, not an archive. The app REFUSES any section larger than 40,000 characters, and a healthy extract is well under 25,000. Stay concise: keep verbatim text only where a rule explicitly demands it (refs, product names, coverage rates, prices); everywhere else paraphrase tightly. Never copy a document wholesale — extract only what this project's scope of works actually needs.
+
 0. **Read `project_context.answers[]` FIRST — estimator wins on conflict.** Before reading any quote, read the `project_context:` block written by step 01. The estimator's answers — especially `PRJ-06` "Which manufacturer system is being priced" and `COM-01` "Are preferential/negotiated material rates available" — outrank anything you find in Q_/OS_/datasheet files. If the project folder contains a Bauder Q_ quote but the estimator answered `PRJ-06: Polyroof Protec`, you extract the Bauder quote for audit but mark the Polyroof system as the authoritative one for downstream pricing via a `project_context_override` block on the affected systems. Log the conflict in `extraction_meta.conflicts` with `resolution: estimator_wins`. **Never silently overwrite the document price** — preserve it for audit, and surface the conflict.
 
 1. **Q_ trumps OS_ trumps datasheet.** Where the same product appears in multiple files, use the **bespoke Q_ price** first, then the OS_ open list, and only fall back to manufacturer datasheet / trade list if neither is present. Always record which source you used.

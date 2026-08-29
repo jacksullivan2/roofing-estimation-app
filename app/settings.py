@@ -119,6 +119,13 @@ AI_STEP_RETRIES = int(os.getenv("AI_STEP_RETRIES", "1"))
 # OpenAI tiers transient 429s arrive in bursts, so the default is generous.
 AI_RATE_LIMIT_RETRIES = int(os.getenv("AI_RATE_LIMIT_RETRIES", "4"))
 
+# Hard cap on one write_section payload. Extraction sections are working
+# data for downstream steps; oversized sections (observed: an 87k-char
+# wholesale transcription of the shared labour-rates workbook) balloon the
+# project_data snapshot every later step carries and make step 08's
+# consolidation physically unable to fit any output limit.
+AI_SECTION_CHAR_CAP = int(os.getenv("AI_SECTION_CHAR_CAP", "40000"))
+
 # Character cap on one read_document tool result. The full text of every
 # document a step reads is echoed back into EVERY later turn of that step's
 # conversation, so an uncapped read of a 150k-char price list makes each

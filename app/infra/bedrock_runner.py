@@ -413,6 +413,15 @@ def _execute_tool(name: str, tool_input: dict, pid: str,
                     "application from the real project record and is "
                     "authoritative. Do not rewrite it. Put any additional "
                     "project metadata you extracted under 'project_extra'.")
+        new_len = len(str(value))
+        cap = settings.AI_SECTION_CHAR_CAP
+        if cap and new_len > cap:
+            return (f"ERROR: not applied — section '{section}' is {new_len:,} "
+                    f"characters; the maximum is {cap:,}. You are transcribing "
+                    "source documents instead of extracting. Resend the COMPLETE "
+                    "section but include only entries this project's scope of "
+                    "works actually needs, and shorten free-text fields — keep "
+                    "refs, names, quantities, rates and prices; cut commentary.")
         if section in project_data:
             old_size = len(str(project_data[section]))
             new_size = len(str(value))
