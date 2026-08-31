@@ -207,6 +207,40 @@ def index_prompts(prompts: list[dict]) -> dict[str, dict]:
 # project_data.yaml persistence                                               #
 # --------------------------------------------------------------------------- #
 
+def _check_clock_skew() -> None:
+    """Fail fast when the Docker VM clock has drifted (the Mac slept).
+
+    AWS rejects every signed request when the clock is >5 min out
+    (InvalidSignatureException / RequestTimeTooSkewed), so without this a
+    skewed run burns 20+ minutes of model calls before dying cryptically."""
+    import email.utils
+    import time as _time
+    from urllib import request as _request
+    from urllib.error import HTTPError
+
+    try:
+        try:
+            resp = _request.urlopen("https://sts.eu-west-2.amazonaws.com",
+                                    timeout=5)
+            date_hdr = resp.headers.get("Date")
+        except HTTPError as he:          # any HTTP status still carries Date
+            date_hdr = he.headers.get("Date")
+        if not date_hdr:
+            return
+        skew = abs(_time.time()
+                   - email.utils.parsedate_to_datetime(date_hdr).timestamp())
+    except Exception:  # noqa: BLE001 — never block a run on the probe itself
+        return
+    if skew > 120:
+        raise WorkflowError(
+            f"This machine's Docker clock is ~{int(skew)}s away from real "
+            "time — AWS rejects every request until it is fixed. This "
+            "happens when the Mac sleeps. Restart Docker Desktop (menu bar "
+            "whale -> Restart), verify with 'docker compose exec "
+            "roofing-estimator date -u' vs 'date -u', then run again. Keep "
+            "the Mac awake during runs (caffeinate -is).")
+
+
 def _seed_project_data(pass_: str, export: dict, project_data: dict) -> None:
     """Facts the app already knows are written by the app, never the model.
 
@@ -467,6 +501,14 @@ def run_step(client, step_no: str, step_prompt: str, corpus: str,
         try:
             resp = client.converse(**kwargs)
         except Exception as exc:  # noqa: BLE001
+            if ("InvalidSignatureException" in str(exc)
+                    or "RequestTimeTooSkewed" in str(exc)):
+                raise WorkflowError(
+                    "The Docker clock drifted mid-run (the Mac slept while "
+                    "the workflow was running) and AWS now rejects every "
+                    "request. Restart Docker Desktop to fix the clock, keep "
+                    "the Mac awake with 'caffeinate -is' (lid open, on "
+                    "power), and run again.") from exc
             # Some models/regions reject cachePoint blocks — retry uncached
             # rather than failing the whole run.
             if cache and "cachePoint" in str(exc):
@@ -509,11 +551,14 @@ def run_step(client, step_no: str, step_prompt: str, corpus: str,
             nudge = (
                 "ERROR: your response was CUT OFF by the maximum output "
                 "length before this tool call completed, so NOTHING was "
-                "saved. Re-issue the write_section call now with the same "
-                "structure but more concise content: shorten description/"
-                "detail field values, drop repetition, keep every item and "
-                "every required key. Do not apologise or explain — just "
-                "make the tool call.")
+                "saved. Re-issue the write_section call now, SMALLER — and "
+                "smaller means FEWER ENTRIES, not just shorter text. First "
+                "re-apply your step prompt's Scope filter / Size discipline "
+                "rules and DROP every entry this project's statement of "
+                "works does not need (note dropped groups in one line under "
+                "extraction_meta). Then shorten free-text fields. Keep the "
+                "required structure and keys. Do not apologise or explain — "
+                "just make the tool call.")
             # The truncated assistant message may still open a tool_use
             # block; Bedrock REQUIRES the next user message to answer every
             # tool_use id with a toolResult, so deliver the nudge as error
@@ -596,6 +641,7 @@ def run_workflow(pass_: str, export: dict, prompts: list[dict],
             f"No prompt files found for the {pass_} pass — check the "
             "_agent_prompts folder / S3 prefix.")
 
+    _check_clock_skew()
     project_data = {} if pass_ == "draft" else _load_project_data(pid)
     _seed_project_data(pass_, export, project_data)
     if pass_ == "final":
